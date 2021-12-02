@@ -1,8 +1,6 @@
 use anyhow::Result;
 
-mod runtime;
-
-use runtime::Runtime;
+use wasmut::runtime::*;
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -13,7 +11,7 @@ fn main() -> Result<()> {
 
     let bytecode = std::fs::read(&args[1])?;
 
-    let mut runtime = runtime::wasmtime::WasmtimeRuntime::new(&bytecode)?;
+    let mut runtime = WasmtimeRuntime::new(&bytecode)?;
 
     let result = runtime.call_returning_i32(&args[2])?;
     dbg!(result);
