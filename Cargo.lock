@@ -973,7 +973,7 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 [[package]]
 name = "parity-wasm"
 version = "0.42.2"
-source = "git+https://github.com/lwagner94/parity-wasm?branch=parse_name_fix#eabaf2880ba3e47ccdfffd3de6cb4722beca18e9"
+source = "git+https://github.com/lwagner94/parity-wasm?branch=parse_name_fix#00df459f6b0edcbd328b69bbe12598914e0950b5"
 
 [[package]]
 name = "paste"

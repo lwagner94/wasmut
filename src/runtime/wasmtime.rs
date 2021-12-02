@@ -6,6 +6,7 @@ use wasmtime_wasi::WasiCtx;
 use anyhow::Result;
 
 use crate::runtime::Runtime;
+use crate::TestFunction;
 
 pub struct WasmtimeRuntime {
     instance: Instance,
@@ -39,13 +40,37 @@ impl Runtime for WasmtimeRuntime {
 
         Ok(func.call(&mut self.store, ())?)
     }
+
+    fn discover_test_functions(&mut self) -> Result<Vec<TestFunction>> {
+        let function_names = self
+            .instance
+            .exports(&mut self.store)
+            .filter_map(|export| {
+                let name = String::from(export.name());
+                export.into_func().map(|_| name)
+            })
+            .collect::<Vec<_>>();
+
+        let test_functions = function_names
+            .iter()
+            .filter_map(|name| {
+                self.instance
+                    .get_typed_func::<(), i32, _>(&mut self.store, name)
+                    .ok()
+                    .map(|_| TestFunction { name: name.clone() })
+            })
+            .collect::<Vec<_>>();
+
+        Ok(test_functions)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
     use std::fs::read;
+
+    // TODO: See if it makes sense to generalize tests for both runtimes?
 
     #[test]
     fn test_simple_add() -> Result<()> {
@@ -53,6 +78,15 @@ mod tests {
         let mut runtime = WasmtimeRuntime::new(&bytecode)?;
         let result = runtime.call_returning_i32("test_add_1")?;
         assert_eq!(result, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_discover_test_functions() -> Result<()> {
+        let bytecode = read("testdata/simple_add/test.wasm")?;
+        let mut runtime = WasmtimeRuntime::new(&bytecode)?;
+        let test_functions = runtime.discover_test_functions()?;
+        assert_eq!(test_functions.len(), 2);
         Ok(())
     }
 }

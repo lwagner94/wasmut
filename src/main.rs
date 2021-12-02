@@ -11,7 +11,11 @@ fn main() -> Result<()> {
 
     let bytecode = std::fs::read(&args[1])?;
 
-    let mut runtime = WasmtimeRuntime::new(&bytecode)?;
+    //discover_mutation_positions(&bytecode)?;
+
+    let mut runtime = WasmerRuntime::new(&bytecode)?;
+    let tests = runtime.discover_test_functions()?;
+    dbg!(tests);
 
     let result = runtime.call_returning_i32(&args[2])?;
     dbg!(result);
