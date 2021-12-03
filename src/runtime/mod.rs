@@ -6,13 +6,15 @@ use crate::wasmmodule::WasmModule;
 
 use crate::error::Result;
 
-use crate::TestFunction;
+use crate::{TestFunction, TestResult};
 
 pub trait Runtime {
     fn new(module: WasmModule) -> Result<Self>
     where
         Self: Sized;
     fn call_returning_i32(&mut self, name: &str) -> Result<i32>;
+
+    fn call_test_function(&mut self, test_function: &TestFunction) -> Result<TestResult>;
 
     fn discover_test_functions(&mut self) -> Result<Vec<TestFunction>>;
 }
@@ -58,6 +60,22 @@ mod tests {
             let mut runtime = create_runtime(runtime_ty, module)?;
             let test_functions = runtime.discover_test_functions()?;
             assert_eq!(test_functions.len(), 2);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_run_all_tests() -> Result<()> {
+        for runtime_ty in get_runtime_types() {
+            let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
+            let mut runtime = create_runtime(runtime_ty, module)?;
+            let test_functions = runtime.discover_test_functions()?;
+
+            for test_function in test_functions {
+                let result = runtime.call_test_function(&test_function)?;
+                assert!(matches!(result, TestResult::Success));
+            }
         }
 
         Ok(())

@@ -6,7 +6,7 @@ use wasmtime_wasi::WasiCtx;
 use crate::error::{Error, Result};
 
 use crate::runtime::Runtime;
-use crate::TestFunction;
+use crate::{TestFunction, TestResult};
 
 use super::WasmModule;
 
@@ -64,10 +64,36 @@ impl Runtime for WasmtimeRuntime {
                 self.instance
                     .get_typed_func::<(), i32, _>(&mut self.store, name)
                     .ok()
-                    .map(|_| TestFunction { name: name.clone() })
+                    .map(|_| TestFunction {
+                        name: name.clone(),
+                        expected_result: true,
+                    })
             })
             .collect::<Vec<_>>();
 
         Ok(test_functions)
+    }
+
+    fn call_test_function(&mut self, test_function: &TestFunction) -> Result<TestResult> {
+        let name = test_function.name.as_str();
+
+        let func = self
+            .instance
+            .get_typed_func::<(), i32, _>(&mut self.store, name)
+            .map_err(|e| Error::RuntimeCall { source: e })?;
+
+        match func.call(&mut self.store, ()) {
+            Ok(result) => {
+                if (result != 0) == test_function.expected_result {
+                    Ok(TestResult::Success)
+                } else {
+                    Ok(TestResult::Failure)
+                }
+            }
+            Err(_) => {
+                // TODO: Trap reason
+                Ok(TestResult::Trapped)
+            }
+        }
     }
 }

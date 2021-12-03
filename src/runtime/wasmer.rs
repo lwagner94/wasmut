@@ -3,6 +3,7 @@ use wasmer_engine_universal::Universal;
 use wasmer_wasi::WasiState;
 
 use crate::error::{Error, Result};
+use crate::TestResult;
 use crate::{runtime::Runtime, TestFunction};
 
 use super::WasmModule;
@@ -55,10 +56,41 @@ impl Runtime for WasmerRuntime {
         for (name, func) in self.instance.exports.iter() {
             if let wasmer::Extern::Function(f) = func {
                 if f.native::<(), i32>().is_ok() {
-                    test_functions.push(TestFunction { name: name.clone() });
+                    test_functions.push(TestFunction {
+                        name: name.clone(),
+                        expected_result: true,
+                    });
                 }
             }
         }
         Ok(test_functions)
+    }
+
+    fn call_test_function(&mut self, test_function: &TestFunction) -> Result<TestResult> {
+        let name = test_function.name.as_str();
+
+        let func = self
+            .instance
+            .exports
+            .get_function(name)
+            .map_err(|e| Error::RuntimeCall { source: e.into() })?;
+
+        let native_func = func
+            .native::<(), i32>()
+            .map_err(|e| Error::RuntimeCall { source: e.into() })?;
+
+        match native_func.call() {
+            Ok(result) => {
+                if (result != 0) == test_function.expected_result {
+                    Ok(TestResult::Success)
+                } else {
+                    Ok(TestResult::Failure)
+                }
+            }
+            Err(_) => {
+                // TODO: Trap reason
+                Ok(TestResult::Trapped)
+            }
+        }
     }
 }

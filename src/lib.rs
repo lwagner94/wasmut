@@ -17,4 +17,11 @@ pub enum BinaryOperator {
 #[derive(Debug)]
 pub struct TestFunction {
     pub name: String,
+    pub expected_result: bool,
+}
+
+pub enum TestResult {
+    Success,
+    Failure,
+    Trapped,
 }
