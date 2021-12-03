@@ -19,4 +19,5 @@ wasmtime-wasi = "0.31.0"
 parity-wasm = { git = "https://github.com/lwagner94/parity-wasm", branch="parse_name_fix" }
 #parity-wasm = { path = "../parity-wasm" }
 anyhow = "1.0.51"
+thiserror = "1.0.30"
 #wabt = "0.10.0"

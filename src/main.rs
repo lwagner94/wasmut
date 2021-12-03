@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use wasmut::runtime::*;
+use wasmut::wasmmodule::WasmModule;
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -9,11 +10,12 @@ fn main() -> Result<()> {
         std::process::exit(1);
     }
 
-    let bytecode = std::fs::read(&args[1])?;
+    // let bytecode = std::fs::read(&args[1])?;
+    let module = WasmModule::from_file(&args[1])?;
 
     //discover_mutation_positions(&bytecode)?;
 
-    let mut runtime = WasmerRuntime::new(&bytecode)?;
+    let mut runtime = create_runtime(RuntimeType::Wasmer, module)?;
     let tests = runtime.discover_test_functions()?;
     dbg!(tests);
 

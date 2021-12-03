@@ -1,5 +1,6 @@
+pub mod error;
 pub mod runtime;
-
+pub mod wasmmodule;
 #[derive(Debug)]
 pub enum MutationType {
     BinaryOperatorReplacement(BinaryOperator, BinaryOperator),
@@ -11,13 +12,6 @@ pub enum BinaryOperator {
     Subtraction,
     Multiplication,
     Division,
-}
-
-#[derive(Debug)]
-pub struct MutationPosition {
-    function_number: usize,
-    statement_number: usize,
-    operator_type: MutationType,
 }
 
 #[derive(Debug)]

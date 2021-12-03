@@ -3,10 +3,12 @@ use wasmtime_wasi::sync::WasiCtxBuilder;
 
 use wasmtime_wasi::WasiCtx;
 
-use anyhow::Result;
+use crate::error::{Error, Result};
 
 use crate::runtime::Runtime;
 use crate::TestFunction;
+
+use super::WasmModule;
 
 pub struct WasmtimeRuntime {
     instance: Instance,
@@ -14,21 +16,24 @@ pub struct WasmtimeRuntime {
 }
 
 impl Runtime for WasmtimeRuntime {
-    fn new(bytecode: &[u8]) -> Result<Self> {
+    fn new(module: WasmModule) -> Result<Self> {
         let engine = Engine::default();
-        let module = Module::new(&engine, &bytecode)?;
+        let bytecode: Vec<u8> = module.try_into()?;
+
+        let module =
+            Module::new(&engine, &bytecode).map_err(|e| Error::RuntimeCreation { source: e })?;
 
         let mut linker = Linker::new(&engine);
-        wasmtime_wasi::add_to_linker(&mut linker, |s| s)?;
+        wasmtime_wasi::add_to_linker(&mut linker, |s| s)
+            .map_err(|e| Error::RuntimeCreation { source: e })?;
 
-        let wasi = WasiCtxBuilder::new()
-            .inherit_stdio()
-            .inherit_args()?
-            .build();
+        let wasi = WasiCtxBuilder::new().inherit_stdio().build();
 
         let mut store = Store::new(&engine, wasi);
 
-        let instance = linker.instantiate(&mut store, &module)?;
+        let instance = linker
+            .instantiate(&mut store, &module)
+            .map_err(|e| Error::RuntimeCreation { source: e })?;
 
         Ok(WasmtimeRuntime { instance, store })
     }
@@ -36,9 +41,11 @@ impl Runtime for WasmtimeRuntime {
     fn call_returning_i32(&mut self, name: &str) -> Result<i32> {
         let func = self
             .instance
-            .get_typed_func::<(), i32, _>(&mut self.store, name)?;
+            .get_typed_func::<(), i32, _>(&mut self.store, name)
+            .map_err(|e| Error::RuntimeCall { source: e })?;
 
-        Ok(func.call(&mut self.store, ())?)
+        func.call(&mut self.store, ())
+            .map_err(|e| Error::RuntimeCall { source: e.into() })
     }
 
     fn discover_test_functions(&mut self) -> Result<Vec<TestFunction>> {
@@ -62,31 +69,5 @@ impl Runtime for WasmtimeRuntime {
             .collect::<Vec<_>>();
 
         Ok(test_functions)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs::read;
-
-    // TODO: See if it makes sense to generalize tests for both runtimes?
-
-    #[test]
-    fn test_simple_add() -> Result<()> {
-        let bytecode = read("testdata/simple_add/test.wasm")?;
-        let mut runtime = WasmtimeRuntime::new(&bytecode)?;
-        let result = runtime.call_returning_i32("test_add_1")?;
-        assert_eq!(result, 1);
-        Ok(())
-    }
-
-    #[test]
-    fn test_discover_test_functions() -> Result<()> {
-        let bytecode = read("testdata/simple_add/test.wasm")?;
-        let mut runtime = WasmtimeRuntime::new(&bytecode)?;
-        let test_functions = runtime.discover_test_functions()?;
-        assert_eq!(test_functions.len(), 2);
-        Ok(())
     }
 }

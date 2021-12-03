@@ -2242,6 +2242,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "parity-wasm",
+ "thiserror",
  "wasmer",
  "wasmer-compiler-cranelift",
  "wasmer-engine-universal",

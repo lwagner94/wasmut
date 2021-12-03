@@ -1,26 +1,34 @@
-use anyhow::Result;
-
 use wasmer_compiler_cranelift::Cranelift;
 use wasmer_engine_universal::Universal;
 use wasmer_wasi::WasiState;
 
+use crate::error::{Error, Result};
 use crate::{runtime::Runtime, TestFunction};
+
+use super::WasmModule;
 
 pub struct WasmerRuntime {
     instance: wasmer::Instance,
 }
 
 impl Runtime for WasmerRuntime {
-    fn new(bytecode: &[u8]) -> Result<Self> {
+    fn new(module: WasmModule) -> Result<Self> {
         use wasmer::{Instance, Module, Store};
 
         let store = Store::new(&Universal::new(Cranelift::default()).engine());
-        let module = Module::new(&store, &bytecode)?;
+        let bytecode: Vec<u8> = module.try_into()?;
+        let module = Module::new(&store, &bytecode)
+            .map_err(|e| Error::RuntimeCreation { source: e.into() })?;
 
-        let mut wasi_env = WasiState::new("command-name").finalize()?;
+        let mut wasi_env = WasiState::new("command-name")
+            .finalize()
+            .map_err(|e| Error::RuntimeCreation { source: e.into() })?;
 
-        let import_object = wasi_env.import_object(&module)?;
-        let instance = Instance::new(&module, &import_object)?;
+        let import_object = wasi_env
+            .import_object(&module)
+            .map_err(|e| Error::RuntimeCreation { source: e.into() })?;
+        let instance = Instance::new(&module, &import_object)
+            .map_err(|e| Error::RuntimeCreation { source: e.into() })?;
 
         Ok(WasmerRuntime { instance })
     }
@@ -29,10 +37,16 @@ impl Runtime for WasmerRuntime {
         let func = self
             .instance
             .exports
-            .get_function(name)?
-            .native::<(), i32>()?;
+            .get_function(name)
+            .map_err(|e| Error::RuntimeCall { source: e.into() })?;
 
-        Ok(func.call()?)
+        let native_func = func
+            .native::<(), i32>()
+            .map_err(|e| Error::RuntimeCall { source: e.into() })?;
+
+        native_func
+            .call()
+            .map_err(|e| Error::RuntimeCall { source: e.into() })
     }
 
     fn discover_test_functions(&mut self) -> Result<Vec<TestFunction>> {
@@ -41,38 +55,10 @@ impl Runtime for WasmerRuntime {
         for (name, func) in self.instance.exports.iter() {
             if let wasmer::Extern::Function(f) = func {
                 if f.native::<(), i32>().is_ok() {
-                    test_functions.push(TestFunction {
-                        name: name.clone(),
-                    });
+                    test_functions.push(TestFunction { name: name.clone() });
                 }
             }
         }
         Ok(test_functions)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs::read;
-
-    // TODO: See if it makes sense to generalize tests for both runtimes?
-
-    #[test]
-    fn test_simple_add() -> Result<()> {
-        let bytecode = read("testdata/simple_add/test.wasm")?;
-        let mut runtime = WasmerRuntime::new(&bytecode)?;
-        let result = runtime.call_returning_i32("test_add_1")?;
-        assert_eq!(result, 1);
-        Ok(())
-    }
-
-    #[test]
-    fn test_discover_test_functions() -> Result<()> {
-        let bytecode = read("testdata/simple_add/test.wasm")?;
-        let mut runtime = WasmerRuntime::new(&bytecode)?;
-        let test_functions = runtime.discover_test_functions()?;
-        assert_eq!(test_functions.len(), 2);
-        Ok(())
     }
 }
