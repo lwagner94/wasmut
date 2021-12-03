@@ -1,6 +1,6 @@
 name:                           coverage
-
 on:                             [push]
+
 jobs:
   test:
     name:                       coverage
@@ -14,10 +14,4 @@ jobs:
 
       - name:                   Generate code coverage
         run: |
-          cargo +nightly tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml
-
-      - name:                   Upload to codecov.io
-        uses:                   codecov/codecov-action@v2
-        with:
-          # token:                ${{secrets.CODECOV_TOKEN}} # not required for public repos
-          fail_ci_if_error:     true
+          cargo +nightly tarpaulin --verbose --all-features --workspace --timeout 120 --coveralls ${{secrets.COVERALLS_REPO_TOKEN}}
