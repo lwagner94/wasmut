@@ -50,21 +50,6 @@ impl Runtime for WasmerRuntime {
         Ok(WasmerRuntime { instance })
     }
 
-    fn call_returning_i32(&mut self, name: &str) -> Result<i32> {
-        let func = self
-            .instance
-            .exports
-            .get_function(name)
-            .map_err(|e| Error::RuntimeCall { source: e.into() })?;
-
-        let native_func = func
-            .native::<(), i32>()
-            .map_err(|e| Error::RuntimeCall { source: e.into() })?;
-
-        native_func
-            .call()
-            .map_err(|e| Error::RuntimeCall { source: e.into() })
-    }
 
     fn discover_test_functions(&mut self) -> Result<Vec<TestFunction>> {
         let mut test_functions = Vec::new();

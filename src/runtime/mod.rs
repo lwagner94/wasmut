@@ -12,7 +12,6 @@ pub trait Runtime {
     fn new(module: WasmModule) -> Result<Self>
     where
         Self: Sized;
-    fn call_returning_i32(&mut self, name: &str) -> Result<i32>;
 
     fn call_test_function(
         &mut self,

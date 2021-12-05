@@ -43,16 +43,6 @@ impl Runtime for WasmtimeRuntime {
         Ok(WasmtimeRuntime { instance, store })
     }
 
-    fn call_returning_i32(&mut self, name: &str) -> Result<i32> {
-        let func = self
-            .instance
-            .get_typed_func::<(), i32, _>(&mut self.store, name)
-            .map_err(|e| Error::RuntimeCall { source: e })?;
-
-        func.call(&mut self.store, ())
-            .map_err(|e| Error::RuntimeCall { source: e.into() })
-    }
-
     fn discover_test_functions(&mut self) -> Result<Vec<TestFunction>> {
         let function_names = self
             .instance
