@@ -1,4 +1,5 @@
 use crate::error::{Error, Result};
+use parity_wasm::elements::{ImportCountType, Module};
 use rayon::prelude::*;
 
 use crate::operator::*;
@@ -11,14 +12,16 @@ pub struct WasmModule {
 impl WasmModule {
     // TODO: Allow wat
     pub fn from_file(path: &str) -> Result<WasmModule> {
-        let module = parity_wasm::elements::deserialize_file(path)
+        let mut module = parity_wasm::elements::deserialize_file(path)
             .map_err(|e| Error::BytecodeDeserialization { source: e })?;
+        module = module.parse_names().unwrap();
         Ok(WasmModule { module })
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<WasmModule> {
-        let module = parity_wasm::elements::deserialize_buffer(bytes)
+        let mut module: Module = parity_wasm::elements::deserialize_buffer(bytes)
             .map_err(|e| Error::BytecodeDeserialization { source: e })?;
+        module = module.parse_names().unwrap();
         Ok(WasmModule { module })
     }
 
@@ -27,7 +30,11 @@ impl WasmModule {
 
         let mut mutation_positions = Vec::new();
 
+        let number_of_imports = self.module.import_count(ImportCountType::Function) as u32;
+
         // let start = time::Instant::now();
+        let names = self.module.names_section().unwrap();
+        let all_names = names.functions().unwrap().names();
 
         for section in self.module.sections() {
             // dbg!(section);
@@ -35,36 +42,46 @@ impl WasmModule {
             if let elements::Section::Code(ref code_section) = *section {
                 let bodies = code_section.bodies();
 
-                mutation_positions.par_extend(bodies.par_iter().enumerate().flat_map_iter(
-                    |(function_number, func_body)| {
-                        let instructions = func_body.code().elements();
+                mutation_positions.par_extend(
+                    bodies
+                        .par_iter()
+                        .enumerate()
+                        .filter(|filter_op| {
+                            let _func_name = all_names
+                                .get(filter_op.0 as u32 + number_of_imports)
+                                .unwrap();
 
-                        let mut mutations: Vec<Mutation> = Vec::new();
+                            // func_name == "add"
+                            // TODO: Filter functions here.
+                            true
+                        })
+                        .flat_map_iter(|(function_number, func_body)| {
+                            let instructions = func_body.code().elements();
 
-                        for (statement_number, parity_instr) in instructions.iter().enumerate() {
-                            if let Some(instruction) =
-                                MutableInstruction::from_parity_instruction(parity_instr)
+                            let mut mutations: Vec<Mutation> = Vec::new();
+
+                            for (statement_number, parity_instr) in instructions.iter().enumerate()
                             {
-                                mutations.extend(
-                                    instruction
-                                        .generate_mutanted_instructions()
-                                        .iter()
-                                        .map(|m| Mutation {
-                                            function_number,
-                                            statement_number,
-                                            instruction: m.clone(),
-                                        }),
-                                );
+                                if let Some(instruction) =
+                                    MutableInstruction::from_parity_instruction(parity_instr)
+                                {
+                                    mutations.extend(
+                                        instruction.generate_mutanted_instructions().iter().map(
+                                            |m| Mutation {
+                                                function_number,
+                                                statement_number,
+                                                instruction: m.clone(),
+                                            },
+                                        ),
+                                    );
+                                }
                             }
-                        }
 
-                        mutations
-                    },
-                ));
+                            mutations
+                        }),
+                );
             }
         }
-
-        // println!("{} seconds for whatever you did.", start.elapsed().whole_microseconds());
 
         mutation_positions
     }

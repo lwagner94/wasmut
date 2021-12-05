@@ -26,7 +26,7 @@ fn main() -> Result<()> {
     let tests = runtime.discover_test_functions()?;
 
     let mutations = module.discover_mutation_positions();
-    dbg!(&mutations);
+    // dbg!(&mutations);
 
     // let mut killed = 0;
 
