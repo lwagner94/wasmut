@@ -22,7 +22,7 @@ pub trait Runtime {
     fn discover_test_functions(&mut self) -> Result<Vec<TestFunction>>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum RuntimeType {
     Wasmtime,
     Wasmer,

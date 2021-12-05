@@ -50,7 +50,6 @@ impl Runtime for WasmerRuntime {
         Ok(WasmerRuntime { instance })
     }
 
-
     fn discover_test_functions(&mut self) -> Result<Vec<TestFunction>> {
         let mut test_functions = Vec::new();
 

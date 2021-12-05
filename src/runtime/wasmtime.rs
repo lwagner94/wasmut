@@ -95,7 +95,6 @@ impl Runtime for WasmtimeRuntime {
         let result = func.call(&mut self.store, ());
         let consumed_fuel_after = self.store.fuel_consumed().unwrap();
         let consumed_fuel = consumed_fuel_after - consumed_fuel_before;
-        dbg!(consumed_fuel);
 
         if consumed_fuel >= limit {
             self.store.add_fuel(1).unwrap();

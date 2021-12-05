@@ -1,4 +1,7 @@
 use crate::error::{Error, Result};
+use rayon::prelude::*;
+
+use crate::operator::*;
 
 #[derive(Clone)]
 pub struct WasmModule {
@@ -17,6 +20,72 @@ impl WasmModule {
         let module = parity_wasm::elements::deserialize_buffer(bytes)
             .map_err(|e| Error::BytecodeDeserialization { source: e })?;
         Ok(WasmModule { module })
+    }
+
+    pub fn discover_mutation_positions(&self) -> Vec<Mutation> {
+        use parity_wasm::elements;
+
+        let mut mutation_positions = Vec::new();
+
+        // let start = time::Instant::now();
+
+        for section in self.module.sections() {
+            // dbg!(section);
+
+            if let elements::Section::Code(ref code_section) = *section {
+                let bodies = code_section.bodies();
+
+                mutation_positions.par_extend(bodies.par_iter().enumerate().flat_map_iter(
+                    |(function_number, func_body)| {
+                        let instructions = func_body.code().elements();
+
+                        let mut mutations: Vec<Mutation> = Vec::new();
+
+                        for (statement_number, parity_instr) in instructions.iter().enumerate() {
+                            if let Some(instruction) =
+                                MutableInstruction::from_parity_instruction(parity_instr)
+                            {
+                                mutations.extend(
+                                    instruction
+                                        .generate_mutanted_instructions()
+                                        .iter()
+                                        .map(|m| Mutation {
+                                            function_number,
+                                            statement_number,
+                                            instruction: m.clone(),
+                                        }),
+                                );
+                            }
+                        }
+
+                        mutations
+                    },
+                ));
+            }
+        }
+
+        // println!("{} seconds for whatever you did.", start.elapsed().whole_microseconds());
+
+        mutation_positions
+    }
+
+    pub fn mutate(&mut self, mutation: &Mutation) {
+        for section in self.module.sections_mut() {
+            if let parity_wasm::elements::Section::Code(ref mut code_section) = *section {
+                let bodies = code_section.bodies_mut();
+
+                for (function_number, func_body) in bodies.iter_mut().enumerate() {
+                    if function_number != mutation.function_number {
+                        continue;
+                    }
+                    let instructions = func_body.code_mut().elements_mut();
+
+                    let instr = instructions.get_mut(mutation.statement_number).unwrap();
+
+                    *instr = mutation.instruction.parity_instruction();
+                }
+            }
+        }
     }
 }
 
@@ -53,6 +122,15 @@ mod tests {
     fn test_into_buffer() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
         let _: Vec<u8> = module.try_into()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_discover_mutation_positions() -> Result<()> {
+        let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
+        let positions = module.discover_mutation_positions();
+
+        assert!(positions.len() > 0);
         Ok(())
     }
 }
