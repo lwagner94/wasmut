@@ -12,6 +12,7 @@ wasmer = "2.1.0"
 wasmer-compiler-cranelift = "2.1.0"
 wasmer-engine-universal = "2.1.0"
 wasmer-wasi = "2.1.0"
+wasmer-middlewares = "2.1.0"
 
 wasmtime = "0.31.0"
 wasmtime-wasi = "0.31.0"

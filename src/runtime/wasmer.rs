@@ -1,9 +1,19 @@
+use std::sync::Arc;
+
+use wasmer::wasmparser::Operator;
+use wasmer::CompilerConfig;
 use wasmer_compiler_cranelift::Cranelift;
 use wasmer_engine_universal::Universal;
+use wasmer_middlewares::{
+    metering::{get_remaining_points, set_remaining_points, MeteringPoints},
+    Metering,
+};
 use wasmer_wasi::WasiState;
 
-use crate::error::{Error, Result};
-use crate::TestResult;
+use crate::{
+    error::{Error, Result},
+    ExecutionPolicy, ExecutionResult,
+};
 use crate::{runtime::Runtime, TestFunction};
 
 use super::WasmModule;
@@ -16,7 +26,13 @@ impl Runtime for WasmerRuntime {
     fn new(module: WasmModule) -> Result<Self> {
         use wasmer::{Instance, Module, Store};
 
-        let store = Store::new(&Universal::new(Cranelift::default()).engine());
+        let cost_function = |_: &Operator| -> u64 { 1 };
+
+        let metering = Arc::new(Metering::new(u64::MAX, cost_function));
+        let mut compiler_config = Cranelift::default();
+        compiler_config.push_middleware(metering);
+
+        let store = Store::new(&Universal::new(compiler_config).engine());
         let bytecode: Vec<u8> = module.try_into()?;
         let module = Module::new(&store, &bytecode)
             .map_err(|e| Error::RuntimeCreation { source: e.into() })?;
@@ -66,8 +82,17 @@ impl Runtime for WasmerRuntime {
         Ok(test_functions)
     }
 
-    fn call_test_function(&mut self, test_function: &TestFunction) -> Result<TestResult> {
+    fn call_test_function(
+        &mut self,
+        test_function: &TestFunction,
+        policy: ExecutionPolicy,
+    ) -> Result<ExecutionResult<i32>> {
         let name = test_function.name.as_str();
+
+        match policy {
+            ExecutionPolicy::RunUntilLimit { limit } => set_remaining_points(&self.instance, limit),
+            ExecutionPolicy::RunUntilReturn => set_remaining_points(&self.instance, u64::MAX),
+        }
 
         let func = self
             .instance
@@ -81,15 +106,27 @@ impl Runtime for WasmerRuntime {
 
         match native_func.call() {
             Ok(result) => {
-                if (result != 0) == test_function.expected_result {
-                    Ok(TestResult::Success)
+                let cost = if let MeteringPoints::Remaining(remaining) =
+                    get_remaining_points(&self.instance)
+                {
+                    u64::MAX - remaining
                 } else {
-                    Ok(TestResult::Failure)
-                }
+                    // TODO: Can this be cleaner?
+                    u64::MAX
+                };
+
+                Ok(ExecutionResult::Normal {
+                    return_value: result,
+                    cost,
+                })
             }
             Err(_) => {
                 // TODO: Trap reason
-                Ok(TestResult::Trapped)
+
+                match get_remaining_points(&self.instance) {
+                    MeteringPoints::Exhausted => Ok(ExecutionResult::LimitExceeded),
+                    _ => Ok(ExecutionResult::Error),
+                }
             }
         }
     }

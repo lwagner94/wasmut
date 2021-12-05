@@ -6,7 +6,7 @@ use crate::wasmmodule::WasmModule;
 
 use crate::error::Result;
 
-use crate::{TestFunction, TestResult};
+use crate::{ExecutionPolicy, ExecutionResult, TestFunction};
 
 pub trait Runtime {
     fn new(module: WasmModule) -> Result<Self>
@@ -14,11 +14,16 @@ pub trait Runtime {
         Self: Sized;
     fn call_returning_i32(&mut self, name: &str) -> Result<i32>;
 
-    fn call_test_function(&mut self, test_function: &TestFunction) -> Result<TestResult>;
+    fn call_test_function(
+        &mut self,
+        test_function: &TestFunction,
+        policy: ExecutionPolicy,
+    ) -> Result<ExecutionResult<i32>>;
 
     fn discover_test_functions(&mut self) -> Result<Vec<TestFunction>>;
 }
 
+#[derive(Debug)]
 pub enum RuntimeType {
     Wasmtime,
     Wasmer,
@@ -42,24 +47,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_simple_add() -> Result<()> {
-        for runtime_ty in get_runtime_types() {
-            let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-            let mut runtime = create_runtime(runtime_ty, module)?;
-            let result = runtime.call_returning_i32("test_add_1")?;
-            assert_eq!(result, 1);
-        }
-
-        Ok(())
-    }
-
-    #[test]
     fn test_discover_test_functions() -> Result<()> {
         for runtime_ty in get_runtime_types() {
             let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
             let mut runtime = create_runtime(runtime_ty, module)?;
             let test_functions = runtime.discover_test_functions()?;
             assert_eq!(test_functions.len(), 2);
+            assert!(test_functions
+                .iter()
+                .all(|f| { f.name.starts_with("test_") }));
         }
 
         Ok(())
@@ -73,8 +69,35 @@ mod tests {
             let test_functions = runtime.discover_test_functions()?;
 
             for test_function in test_functions {
-                let result = runtime.call_test_function(&test_function)?;
-                assert!(matches!(result, TestResult::Success));
+                let result =
+                    runtime.call_test_function(&test_function, ExecutionPolicy::RunUntilReturn)?;
+                assert!(matches!(
+                    result,
+                    ExecutionResult::Normal {
+                        cost: 18,
+                        return_value: 1
+                    }
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_execution_limit() -> Result<()> {
+        for runtime_ty in get_runtime_types() {
+            let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
+            let mut runtime = create_runtime(runtime_ty, module)?;
+            let test_functions = runtime.discover_test_functions()?;
+
+            for test_function in test_functions {
+                let result = runtime.call_test_function(
+                    &test_function,
+                    ExecutionPolicy::RunUntilLimit { limit: 1 },
+                )?;
+
+                assert!(matches!(result, ExecutionResult::LimitExceeded));
             }
         }
 
