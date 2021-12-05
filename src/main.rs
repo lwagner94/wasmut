@@ -44,7 +44,7 @@ fn main() -> Result<()> {
                 for test in &tests {
                     match runtime
                         .call_test_function(
-                            &test,
+                            test,
                             wasmut::ExecutionPolicy::RunUntilLimit { limit: 100 },
                         )
                         .unwrap()

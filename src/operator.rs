@@ -42,7 +42,7 @@ impl MutableInstruction {
             ParityInstruction::I32Sub => Some(BinaryOperatorInstr(I32Sub)),
             ParityInstruction::I32Mul => Some(BinaryOperatorInstr(I32Mul)),
             ParityInstruction::I32DivU => Some(BinaryOperatorInstr(I32DivU)),
-            ParityInstruction::I32DivU => Some(BinaryOperatorInstr(I32DivU)),
+            ParityInstruction::I32DivS => Some(BinaryOperatorInstr(I32DivS)),
             ParityInstruction::I32Const(i) => Some(ConstantInstr(I32(*i))),
             ParityInstruction::I64Const(i) => Some(ConstantInstr(I64(*i))),
             // ParityInstruction::F32Const(f) => Some(ConstantInstr(F32(f))),
