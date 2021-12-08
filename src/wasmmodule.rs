@@ -47,11 +47,12 @@ impl WasmModule {
                         .par_iter()
                         .enumerate()
                         .filter(|filter_op| {
-                            let _func_name = all_names
+                            let func_name = all_names
                                 .get(filter_op.0 as u32 + number_of_imports)
                                 .unwrap();
+                            // println!("{}", &func_name);
+                            // func_name.starts_with("simple_rust")
 
-                            // func_name == "add"
                             // TODO: Filter functions here.
                             true
                         })

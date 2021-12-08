@@ -31,8 +31,9 @@ fn main() -> Result<()> {
     // let mut killed = 0;
 
     let start = time::Instant::now();
+    let mut killed = 0;
 
-    let killed: u32 = mutations
+    killed = mutations
         .par_iter()
         .fold(
             || 0,
