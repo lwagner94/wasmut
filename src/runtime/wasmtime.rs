@@ -6,7 +6,7 @@ use wasmtime_wasi::WasiCtx;
 use crate::error::{Error, Result};
 
 use crate::runtime::Runtime;
-use crate::{ExecutionPolicy, ExecutionResult, TestFunction};
+use crate::{ExecutionPolicy, ExecutionResult, TestFunction, TestFunctionType};
 
 use super::WasmModule;
 
@@ -43,7 +43,85 @@ impl Runtime for WasmtimeRuntime {
         Ok(WasmtimeRuntime { instance, store })
     }
 
-    fn discover_test_functions(&mut self) -> Result<Vec<TestFunction>> {
+    fn call_test_function(
+        &mut self,
+        test_function: &TestFunction,
+        policy: ExecutionPolicy,
+    ) -> Result<ExecutionResult> {
+        // Ad TODO: Whenever we consume fuel, the amount of consumed is added
+        // to a variable, which may not overflow. so we cannot use u64::MAX here.
+        let limit = match policy {
+            ExecutionPolicy::RunUntilLimit { limit } => limit,
+            ExecutionPolicy::RunUntilReturn => u32::MAX as u64, // TODO
+        };
+
+        // We always leave 1 unit of fuel in the store
+        self.store.add_fuel(limit - 1).unwrap();
+
+        let name = test_function.name.as_str();
+
+        let consumed_fuel_before = self.store.fuel_consumed().unwrap();
+
+        let result = match test_function.function_type {
+            TestFunctionType::FuncReturningI32 => {
+                let func = self
+                    .instance
+                    .get_typed_func::<(), i32, _>(&mut self.store, name)
+                    .map_err(|e| Error::RuntimeCall { source: e })?;
+
+                func.call(&mut self.store, ())
+            }
+            TestFunctionType::StartEntryPoint => {
+                let func = self
+                    .instance
+                    .get_typed_func::<(), (), _>(&mut self.store, name)
+                    .map_err(|e| Error::RuntimeCall { source: e })?;
+
+                // Map to Result<i32> so that the type matches
+                func.call(&mut self.store, ()).map(|_| 0)
+            }
+        };
+
+        let consumed_fuel_after = self.store.fuel_consumed().unwrap();
+        let consumed_fuel = consumed_fuel_after - consumed_fuel_before;
+
+        if consumed_fuel >= limit {
+            self.store.add_fuel(1).unwrap();
+        } else {
+            let leftover = self.store.consume_fuel(0).unwrap();
+            self.store.consume_fuel(leftover - 1).unwrap();
+        }
+
+        match result {
+            Ok(return_value) => match test_function.function_type {
+                TestFunctionType::FuncReturningI32 => Ok(ExecutionResult::FunctionReturn {
+                    return_value,
+                    // cost: consumed_fuel,
+                }),
+                TestFunctionType::StartEntryPoint => Ok(ExecutionResult::ProcessExit {
+                    exit_code: return_value as u32,
+                    // cost: consumed_fuel,
+                }),
+            },
+            Err(e) => {
+                if consumed_fuel >= limit {
+                    Ok(ExecutionResult::LimitExceeded)
+                } else {
+                    // TODO: Handle other errors
+
+                    if let Some(code) = e.i32_exit_status() {
+                        Ok(ExecutionResult::ProcessExit {
+                            exit_code: code as u32,
+                        })
+                    } else {
+                        Ok(ExecutionResult::Error)
+                    }
+                }
+            }
+        }
+    }
+
+    fn discover_test_functions(&mut self) -> Option<Vec<TestFunction>> {
         let function_names = self
             .instance
             .exports(&mut self.store)
@@ -62,65 +140,26 @@ impl Runtime for WasmtimeRuntime {
                     .map(|_| TestFunction {
                         name: name.clone(),
                         expected_result: true,
+                        function_type: TestFunctionType::FuncReturningI32,
                     })
             })
             .collect::<Vec<_>>();
 
-        Ok(test_functions)
+        Some(test_functions)
     }
 
-    fn call_test_function(
-        &mut self,
-        test_function: &TestFunction,
-        policy: ExecutionPolicy,
-    ) -> Result<ExecutionResult<i32>> {
-        // Ad TODO: Whenever we consume fuel, the amount of consumed is added
-        // to a variable, which may not overflow. so we cannot use u64::MAX here.
-        let limit = match policy {
-            ExecutionPolicy::RunUntilLimit { limit } => limit,
-            ExecutionPolicy::RunUntilReturn => u32::MAX as u64, // TODO
-        };
-
-        // We always leave 1 unit of fuel in the store
-        self.store.add_fuel(limit - 1).unwrap();
-
-        let name = test_function.name.as_str();
-
-        let func = self
-            .instance
-            .get_typed_func::<(), i32, _>(&mut self.store, name)
-            .map_err(|e| Error::RuntimeCall { source: e })?;
-
-        let consumed_fuel_before = self.store.fuel_consumed().unwrap();
-        let result = func.call(&mut self.store, ());
-        let consumed_fuel_after = self.store.fuel_consumed().unwrap();
-        let consumed_fuel = consumed_fuel_after - consumed_fuel_before;
-
-        if consumed_fuel >= limit {
-            self.store.add_fuel(1).unwrap();
-        } else {
-            let leftover = self.store.consume_fuel(0).unwrap();
-            self.store.consume_fuel(leftover - 1).unwrap();
-        }
-
-        match result {
-            Ok(return_value) => Ok(ExecutionResult::Normal {
-                return_value,
-                cost: consumed_fuel,
-            }),
-            Err(e) => {
-                // TODO: Trap reason
-                // let ne: Box<dyn std::error::Error> = e.into();
-                // dbg!(ne.source());
-
-                if consumed_fuel >= limit {
-                    Ok(ExecutionResult::LimitExceeded)
-                } else {
-                    // TODO: Handle other errors
-                    dbg!(e);
-                    Ok(ExecutionResult::Error)
-                }
+    fn discover_entry_point(&mut self) -> Option<TestFunction> {
+        self.instance.exports(&mut self.store).find_map(|export| {
+            let name = String::from(export.name());
+            if name == "_start" {
+                export.into_func().map(|_| TestFunction {
+                    name,
+                    expected_result: false,
+                    function_type: TestFunctionType::StartEntryPoint,
+                })
+            } else {
+                None
             }
-        }
+        })
     }
 }

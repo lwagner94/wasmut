@@ -7,12 +7,20 @@ pub mod wasmmodule;
 pub struct TestFunction {
     pub name: String,
     pub expected_result: bool,
+    pub function_type: TestFunctionType,
 }
 
 #[derive(Debug)]
-pub enum ExecutionResult<T> {
+pub enum TestFunctionType {
+    StartEntryPoint,
+    FuncReturningI32,
+}
+
+#[derive(Debug)]
+pub enum ExecutionResult {
     // Normal termination
-    Normal { return_value: T, cost: u64 },
+    FunctionReturn { return_value: i32 },
+    ProcessExit { exit_code: u32 },
     // Execution limit exceeded
     LimitExceeded,
 

@@ -51,10 +51,10 @@ impl WasmModule {
                                 .get(filter_op.0 as u32 + number_of_imports)
                                 .unwrap();
                             // println!("{}", &func_name);
-                            // func_name.starts_with("simple_rust")
+                            func_name == "add"
 
                             // TODO: Filter functions here.
-                            true
+                            // true
                         })
                         .flat_map_iter(|(function_number, func_body)| {
                             let instructions = func_body.code().elements();
@@ -149,6 +149,20 @@ mod tests {
         let positions = module.discover_mutation_positions();
 
         assert!(positions.len() > 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_mutation() -> Result<()> {
+        let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
+        let positions = module.discover_mutation_positions();
+        let mut mutant = module.clone();
+        mutant.mutate(&positions[0]);
+
+        let mutated_bytecode: Vec<u8> = mutant.try_into().unwrap();
+        let original_bytecode: Vec<u8> = module.try_into().unwrap();
+
+        assert_ne!(mutated_bytecode, original_bytecode);
         Ok(())
     }
 }

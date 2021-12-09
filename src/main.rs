@@ -4,7 +4,6 @@ use rayon::prelude::*;
 use wasmut::runtime::*;
 use wasmut::wasmmodule::WasmModule;
 
-#[cfg(not(tarpaulin_include))]
 fn main() -> Result<()> {
     use std::time;
 
@@ -14,26 +13,23 @@ fn main() -> Result<()> {
         std::process::exit(1);
     }
 
-    // let bytecode = std::fs::read(&args[1])?;
     let module = WasmModule::from_file(&args[1])?;
 
-    //discover_mutation_positions(&bytecode)?;
 
     let runtime_type = RuntimeType::Wasmtime;
     dbg!(&runtime_type);
 
     let mut runtime = create_runtime(runtime_type, module.clone())?;
-    let tests = runtime.discover_test_functions()?;
+    let entry_point = runtime.discover_entry_point().unwrap();
+    let tests = vec![entry_point];
 
     let mutations = module.discover_mutation_positions();
-    // dbg!(&mutations);
-
-    // let mut killed = 0;
+    
 
     let start = time::Instant::now();
-    let mut killed = 0;
+    
 
-    killed = mutations
+    let killed: u32 = mutations
         .par_iter()
         .fold(
             || 0,
@@ -50,8 +46,14 @@ fn main() -> Result<()> {
                         )
                         .unwrap()
                     {
-                        wasmut::ExecutionResult::Normal { return_value, .. } => {
+                        wasmut::ExecutionResult::FunctionReturn { return_value, .. } => {
                             if test.expected_result != (return_value != 0) {
+                                killed += 1;
+                                break;
+                            }
+                        }
+                        wasmut::ExecutionResult::ProcessExit { exit_code, .. } => {
+                            if test.expected_result != (exit_code != 0) {
                                 killed += 1;
                                 break;
                             }
