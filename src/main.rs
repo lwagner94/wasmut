@@ -1,4 +1,5 @@
 use anyhow::Result;
+use clap::{App, Arg, SubCommand, ArgMatches, AppSettings};
 
 use rayon::prelude::*;
 use wasmut::{
@@ -8,16 +9,43 @@ use wasmut::{
     ExecutionResult,
 };
 
-fn main() -> Result<()> {
-    use std::time;
+fn build_argparser() -> ArgMatches<'static> {
+    App::new("wasmut")
+        .version("0.0.1")
+        .author("Lukas Wagner <lwagner94@posteo.at>")
+        .about("Mutation testing for WebAssembly")
+        .setting(AppSettings::ColorAlways)
+        .subcommand(
+            SubCommand::with_name("list-functions").arg(
+                Arg::with_name("INPUT")
+                    .help("Sets the input file to use")
+                    .required(true),
+            ),
+        )
+        .subcommand(
+            SubCommand::with_name("mutate").arg(
+                Arg::with_name("INPUT")
+                    .help("Sets the input file to use")
+                    .required(true),
+            ),
+        )
+        .get_matches()
+}
 
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() < 2 {
-        eprintln!("Insufficient args");
-        std::process::exit(1);
+fn list_functions(wasmfile: &str) -> Result<()> {
+    let module = WasmModule::from_file(wasmfile)?;
+    for function in module.functions() {
+        println!("{}", function);
     }
 
-    let module = WasmModule::from_file(&args[1])?;
+    Ok(())
+}
+
+fn mutate(wasmfile: &str) -> Result<()> {
+   use std::time;
+
+
+    let module = WasmModule::from_file(wasmfile)?;
 
     let runtime_type = RuntimeType::Wasmtime;
     dbg!(&runtime_type);
@@ -74,4 +102,24 @@ fn main() -> Result<()> {
     println!("in {}s.", start.elapsed().as_millis() as f64 / 1000.0);
 
     Ok(())
+}
+
+fn main() -> Result<()> {
+    let cli = build_argparser();
+
+    if let Some(cli) = cli.subcommand_matches("list-functions") {
+        let input_file = cli.value_of("INPUT").unwrap();
+
+        list_functions(input_file)?;
+    }
+
+    if let Some(cli) = cli.subcommand_matches("mutate") {
+        let input_file = cli.value_of("INPUT").unwrap();
+
+        mutate(input_file)?;
+    }
+
+    Ok(())
+
+ 
 }

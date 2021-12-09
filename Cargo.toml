@@ -24,5 +24,5 @@ parity-wasm = { git = "https://github.com/lwagner94/parity-wasm", branch="parse_
 anyhow = "1.0.51"
 thiserror = "1.0.30"
 regex = "1.0.2"
-
+clap = "2.34.0"
 #wabt = "0.10.0"

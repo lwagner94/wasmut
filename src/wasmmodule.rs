@@ -105,6 +105,30 @@ impl WasmModule {
             }
         }
     }
+
+    pub fn functions(&self) -> Vec<&str> {
+        use parity_wasm::elements;
+
+        let mut functions = Vec::new();
+
+        // TODO: Extract function
+        let number_of_imports = self.module.import_count(ImportCountType::Function) as u32;
+
+        let names = self.module.names_section().unwrap();
+        let all_names = names.functions().unwrap().names();
+
+        for section in self.module.sections() {
+            if let elements::Section::Code(ref code_section) = *section {
+
+                for (idx, _) in code_section.bodies().iter().enumerate() {
+                    let name = all_names.get(idx as u32 + number_of_imports).unwrap().as_str();
+                    functions.push(name);
+                }
+            }
+        }
+
+        functions
+    }
 }
 
 impl TryFrom<WasmModule> for Vec<u8> {
@@ -163,6 +187,15 @@ mod tests {
         let original_bytecode: Vec<u8> = module.try_into().unwrap();
 
         assert_ne!(mutated_bytecode, original_bytecode);
+        Ok(())
+    }
+
+    #[test]
+    fn get_functions() -> Result<()> {
+        let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
+        let functions = module.functions();
+        assert!(functions.contains(&"_start"));
+        assert!(functions.contains(&"add"));
         Ok(())
     }
 }
