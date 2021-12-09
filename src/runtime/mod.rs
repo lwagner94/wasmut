@@ -1,12 +1,13 @@
 pub mod wasmer;
 pub mod wasmtime;
+use crate::policy::ExecutionPolicy;
 use crate::runtime::wasmer::WasmerRuntime;
 use crate::runtime::wasmtime::WasmtimeRuntime;
 use crate::wasmmodule::WasmModule;
 
 use crate::error::Result;
 
-use crate::{ExecutionPolicy, ExecutionResult, TestFunction};
+use crate::{ExecutionResult, TestFunction};
 
 pub trait Runtime {
     fn new(module: WasmModule) -> Result<Self>

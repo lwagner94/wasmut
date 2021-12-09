@@ -24,6 +24,9 @@ pub enum Error {
     #[error("runtime execution trapped")]
     RuntimeTrap,
 
+    #[error("regex creation failed")] // TODO
+    RegexError(#[from] regex::Error),
+
     #[error("unknown error")]
     Unknown,
 }

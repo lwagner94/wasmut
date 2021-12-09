@@ -2255,6 +2255,7 @@ dependencies = [
  "anyhow",
  "parity-wasm",
  "rayon",
+ "regex",
  "thiserror",
  "wasmer",
  "wasmer-compiler-cranelift",

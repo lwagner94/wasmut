@@ -1,4 +1,7 @@
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    policy::MutationPolicy,
+};
 use parity_wasm::elements::{ImportCountType, Module};
 use rayon::prelude::*;
 
@@ -25,7 +28,7 @@ impl WasmModule {
         Ok(WasmModule { module })
     }
 
-    pub fn discover_mutation_positions(&self) -> Vec<Mutation> {
+    pub fn discover_mutation_positions(&self, mutation_policy: &MutationPolicy) -> Vec<Mutation> {
         use parity_wasm::elements;
 
         let mut mutation_positions = Vec::new();
@@ -50,11 +53,8 @@ impl WasmModule {
                             let func_name = all_names
                                 .get(filter_op.0 as u32 + number_of_imports)
                                 .unwrap();
-                            // println!("{}", &func_name);
-                            func_name == "add"
 
-                            // TODO: Filter functions here.
-                            // true
+                            mutation_policy.check_function(func_name)
                         })
                         .flat_map_iter(|(function_number, func_body)| {
                             let instructions = func_body.code().elements();
@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn test_discover_mutation_positions() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        let positions = module.discover_mutation_positions();
+        let positions = module.discover_mutation_positions(&MutationPolicy::default());
 
         assert!(positions.len() > 0);
         Ok(())
@@ -155,7 +155,7 @@ mod tests {
     #[test]
     fn test_mutation() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        let positions = module.discover_mutation_positions();
+        let positions = module.discover_mutation_positions(&MutationPolicy::default());
         let mut mutant = module.clone();
         mutant.mutate(&positions[0]);
 

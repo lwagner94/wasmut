@@ -1,5 +1,6 @@
 pub mod error;
 pub mod operator;
+pub mod policy;
 pub mod runtime;
 pub mod wasmmodule;
 
@@ -26,14 +27,4 @@ pub enum ExecutionResult {
 
     // Other error
     Error,
-}
-
-pub enum ExecutionPolicy {
-    // Run the function until the execution limit is reached
-    RunUntilLimit {
-        // The maximum number of instructions to execute
-        limit: u64,
-    },
-    // Run the function until the function returns
-    RunUntilReturn,
 }

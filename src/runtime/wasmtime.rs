@@ -5,8 +5,9 @@ use wasmtime_wasi::WasiCtx;
 
 use crate::error::{Error, Result};
 
+use crate::policy::ExecutionPolicy;
 use crate::runtime::Runtime;
-use crate::{ExecutionPolicy, ExecutionResult, TestFunction, TestFunctionType};
+use crate::{ExecutionResult, TestFunction, TestFunctionType};
 
 use super::WasmModule;
 

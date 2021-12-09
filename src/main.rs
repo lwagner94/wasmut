@@ -1,8 +1,12 @@
 use anyhow::Result;
 
 use rayon::prelude::*;
-use wasmut::runtime::*;
-use wasmut::wasmmodule::WasmModule;
+use wasmut::{
+    policy::{ExecutionPolicy, MutationPolicyBuilder},
+    runtime::{create_runtime, RuntimeType},
+    wasmmodule::WasmModule,
+    ExecutionResult,
+};
 
 fn main() -> Result<()> {
     use std::time;
@@ -15,7 +19,6 @@ fn main() -> Result<()> {
 
     let module = WasmModule::from_file(&args[1])?;
 
-
     let runtime_type = RuntimeType::Wasmtime;
     dbg!(&runtime_type);
 
@@ -23,11 +26,13 @@ fn main() -> Result<()> {
     let entry_point = runtime.discover_entry_point().unwrap();
     let tests = vec![entry_point];
 
-    let mutations = module.discover_mutation_positions();
-    
+    let mutation_policy = MutationPolicyBuilder::new()
+        .allow_function("^add")
+        .build()?;
+
+    let mutations = module.discover_mutation_positions(&mutation_policy);
 
     let start = time::Instant::now();
-    
 
     let killed: u32 = mutations
         .par_iter()
@@ -40,26 +45,23 @@ fn main() -> Result<()> {
 
                 for test in &tests {
                     match runtime
-                        .call_test_function(
-                            test,
-                            wasmut::ExecutionPolicy::RunUntilLimit { limit: 100 },
-                        )
+                        .call_test_function(test, ExecutionPolicy::RunUntilLimit { limit: 100 })
                         .unwrap()
                     {
-                        wasmut::ExecutionResult::FunctionReturn { return_value, .. } => {
+                        ExecutionResult::FunctionReturn { return_value, .. } => {
                             if test.expected_result != (return_value != 0) {
                                 killed += 1;
                                 break;
                             }
                         }
-                        wasmut::ExecutionResult::ProcessExit { exit_code, .. } => {
+                        ExecutionResult::ProcessExit { exit_code, .. } => {
                             if test.expected_result != (exit_code != 0) {
                                 killed += 1;
                                 break;
                             }
                         }
-                        wasmut::ExecutionResult::LimitExceeded => todo!(),
-                        wasmut::ExecutionResult::Error => todo!(),
+                        ExecutionResult::LimitExceeded => todo!(),
+                        ExecutionResult::Error => todo!(),
                     }
                 }
 

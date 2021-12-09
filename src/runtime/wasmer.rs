@@ -12,7 +12,8 @@ use wasmer_wasi::{WasiError, WasiState};
 
 use crate::{
     error::{Error, Result},
-    ExecutionPolicy, ExecutionResult, TestFunctionType,
+    policy::ExecutionPolicy,
+    ExecutionResult, TestFunctionType,
 };
 use crate::{runtime::Runtime, TestFunction};
 
@@ -82,7 +83,6 @@ impl Runtime for WasmerRuntime {
                 native_func.call().map(|_| 0)
             }
         };
-
 
         match result {
             Ok(result) => {
