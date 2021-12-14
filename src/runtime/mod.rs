@@ -1,11 +1,17 @@
+#[cfg(feature = "runtime-wasmer")]
 pub mod wasmer;
+#[cfg(feature = "runtime-wasmtime")]
 pub mod wasmtime;
-use crate::policy::ExecutionPolicy;
-use crate::runtime::wasmer::WasmerRuntime;
-use crate::runtime::wasmtime::WasmtimeRuntime;
-use crate::wasmmodule::WasmModule;
 
-use crate::error::Result;
+#[cfg(feature = "runtime-wasmer")]
+use crate::runtime::wasmer::WasmerRuntime;
+#[cfg(feature = "runtime-wasmtime")]
+use crate::runtime::wasmtime::WasmtimeRuntime;
+
+use crate::wasmmodule::WasmModule;
+use crate::policy::ExecutionPolicy;
+
+use crate::error::{Result, Error};
 
 use crate::{ExecutionResult, TestFunction};
 
@@ -32,15 +38,23 @@ pub enum RuntimeType {
 
 use RuntimeType::*;
 
+#[allow(unreachable_patterns)]
 pub fn create_runtime(rt: RuntimeType, module: WasmModule) -> Result<Box<dyn Runtime>> {
     match rt {
-        Wasmtime => Ok(Box::new(WasmtimeRuntime::new(module)?)),
-        Wasmer => Ok(Box::new(WasmerRuntime::new(module)?)),
+        
+        #[cfg(feature = "runtime-wasmtime")] Wasmtime => Ok(Box::new(WasmtimeRuntime::new(module)?)),
+        #[cfg(feature = "runtime-wasmer")] Wasmer => Ok(Box::new(WasmerRuntime::new(module)?)),
+        _ => Err(Error::RuntimeNotAvailable)
     }
 }
 
 pub fn get_runtime_types() -> Vec<RuntimeType> {
-    vec![Wasmtime, Wasmer]
+    let mut runtimes = Vec::new();
+    #[cfg(feature = "runtime-wasmtime")]
+    runtimes.push(Wasmtime);
+    #[cfg(feature = "runtime-wasmer")]
+    runtimes.push(Wasmer);
+    runtimes
 }
 
 #[cfg(test)]

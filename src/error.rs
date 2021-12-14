@@ -16,6 +16,9 @@ pub enum Error {
         source: anyhow::Error, // TODO: Is this clean?
     },
 
+    #[error("runtime not available")]
+    RuntimeNotAvailable,
+
     #[error("runtime call failed")]
     RuntimeCall {
         source: anyhow::Error, // TODO: Is this clean?
