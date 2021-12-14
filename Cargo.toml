@@ -12,6 +12,7 @@ rayon = "1.5.1"
 
 wasmer = "2.1.0"
 wasmer-compiler-cranelift = "2.1.0"
+wasmer-compiler-singlepass = "2.1.0"
 wasmer-engine-universal = "2.1.0"
 wasmer-wasi = "2.1.0"
 wasmer-middlewares = "2.1.0"

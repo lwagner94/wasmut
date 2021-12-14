@@ -47,18 +47,24 @@ fn mutate(wasmfile: &str) -> Result<()> {
 
     let module = WasmModule::from_file(wasmfile)?;
 
-    let runtime_type = RuntimeType::Wasmtime;
+    let runtime_type = RuntimeType::Wasmer;
     dbg!(&runtime_type);
-
+    let start = time::Instant::now();
     let mut runtime = create_runtime(runtime_type, module.clone())?;
+    println!("Created runtime in {}s.", start.elapsed().as_millis() as f64 / 1000.0);
     let entry_point = runtime.discover_entry_point().unwrap();
     let tests = vec![entry_point];
 
     let mutation_policy = MutationPolicyBuilder::new()
-        .allow_function("^add")
+        .allow_function("^factorial")
         .build()?;
 
+    
     let mutations = module.discover_mutation_positions(&mutation_policy);
+    
+
+    //dbg!(&mutations);
+    //dbg!(&mutations.len());
 
     let start = time::Instant::now();
 
@@ -73,7 +79,7 @@ fn mutate(wasmfile: &str) -> Result<()> {
 
                 for test in &tests {
                     match runtime
-                        .call_test_function(test, ExecutionPolicy::RunUntilLimit { limit: 100 })
+                        .call_test_function(test, ExecutionPolicy::RunUntilLimit { limit: 10000000 })
                         .unwrap()
                     {
                         ExecutionResult::FunctionReturn { return_value, .. } => {
@@ -88,8 +94,16 @@ fn mutate(wasmfile: &str) -> Result<()> {
                                 break;
                             }
                         }
-                        ExecutionResult::LimitExceeded => todo!(),
-                        ExecutionResult::Error => todo!(),
+                        ExecutionResult::LimitExceeded => {
+                            killed += 1;
+                            println!("timeout");
+                            break;
+                        },
+                        ExecutionResult::Error => {
+                            killed += 1;
+                            println!("Error.");
+                            break;
+                        },
                     }
                 }
 

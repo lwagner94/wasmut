@@ -3,12 +3,13 @@ use std::sync::Arc;
 use wasmer::wasmparser::Operator;
 use wasmer::CompilerConfig;
 use wasmer_compiler_cranelift::Cranelift;
+use wasmer_compiler_singlepass::Singlepass;
 use wasmer_engine_universal::Universal;
 use wasmer_middlewares::{
     metering::{get_remaining_points, set_remaining_points, MeteringPoints},
     Metering,
 };
-use wasmer_wasi::{WasiError, WasiState};
+use wasmer_wasi::{WasiError, WasiState, Pipe};
 
 use crate::{
     error::{Error, Result},
@@ -30,7 +31,7 @@ impl Runtime for WasmerRuntime {
         let cost_function = |_: &Operator| -> u64 { 1 };
 
         let metering = Arc::new(Metering::new(u64::MAX, cost_function));
-        let mut compiler_config = Cranelift::default();
+        let mut compiler_config = Singlepass::default();
         compiler_config.push_middleware(metering);
 
         let store = Store::new(&Universal::new(compiler_config).engine());
@@ -38,7 +39,10 @@ impl Runtime for WasmerRuntime {
         let module = Module::new(&store, &bytecode)
             .map_err(|e| Error::RuntimeCreation { source: e.into() })?;
 
+        let stdout = Box::new(Pipe::new());
+
         let mut wasi_env = WasiState::new("command-name")
+            .stdout(stdout)
             .finalize()
             .map_err(|e| Error::RuntimeCreation { source: e.into() })?;
 
@@ -115,7 +119,6 @@ impl Runtime for WasmerRuntime {
                         //     Ok(ExecutionResult::Error)
                         // }
                         if let Ok(wasi_err) = e.downcast() {
-                            dbg!(&wasi_err);
                             match wasi_err {
                                 WasiError::Exit(exit_code) => {
                                     Ok(ExecutionResult::ProcessExit { exit_code })
