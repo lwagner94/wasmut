@@ -1933,9 +1933,9 @@ dependencies = [
 
 [[package]]
 name = "wasmer-compiler-singlepass"
-version = "2.1.0"
+version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58c57d533c1be92916bbb9c170eafa2246c57b90aef43d7c15f4162e3044ff81"
+checksum = "271d3da24c5d1a8bb3f9fc3944ba96d2588b6fa16a0bcef91765db853aeccac4"
 dependencies = [
  "byteorder",
  "dynasm",
