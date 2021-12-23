@@ -1,9 +1,9 @@
+
 use crate::{
     error::{Error, Result},
     policy::MutationPolicy,
 };
 use parity_wasm::elements::{ImportCountType, Module};
-use rayon::prelude::*;
 
 use crate::operator::*;
 
@@ -15,6 +15,7 @@ pub struct WasmModule {
 impl WasmModule {
     // TODO: Allow wat
     pub fn from_file(path: &str) -> Result<WasmModule> {
+    
         let mut module = parity_wasm::elements::deserialize_file(path)
             .map_err(|e| Error::BytecodeDeserialization { source: e })?;
         module = module.parse_names().unwrap();
@@ -22,7 +23,8 @@ impl WasmModule {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<WasmModule> {
-        let mut module: Module = parity_wasm::elements::deserialize_buffer(bytes)
+        let bytes = Vec::from(bytes);
+        let mut module: Module = parity_wasm::elements::deserialize_buffer(&bytes)
             .map_err(|e| Error::BytecodeDeserialization { source: e })?;
         module = module.parse_names().unwrap();
         Ok(WasmModule { module })
@@ -43,11 +45,12 @@ impl WasmModule {
             // dbg!(section);
 
             if let elements::Section::Code(ref code_section) = *section {
+                let code_section_offset = code_section.offset();
                 let bodies = code_section.bodies();
 
-                mutation_positions.par_extend(
+                mutation_positions.extend(
                     bodies
-                        .par_iter()
+                        .iter()
                         .enumerate()
                         .filter(|filter_op| {
                             let func_name = all_names
@@ -56,27 +59,33 @@ impl WasmModule {
 
                             mutation_policy.check_function(func_name)
                         })
-                        .flat_map_iter(|(function_number, func_body)| {
+                        .flat_map(|(function_number, func_body)| {
                             let instructions = func_body.code().elements();
+                            let offsets = func_body.code().offsets();
 
                             let mut mutations: Vec<Mutation> = Vec::new();
 
-                            for (statement_number, parity_instr) in instructions.iter().enumerate()
+                            for ((statement_number, parity_instr), offset) in
+                                instructions.iter().enumerate().zip(offsets)
                             {
+                                
                                 if let Some(instruction) =
                                     MutableInstruction::from_parity_instruction(parity_instr)
                                 {
                                     mutations.extend(
                                         instruction.generate_mutanted_instructions().iter().map(
                                             |m| Mutation {
-                                                function_number,
-                                                statement_number,
+                                                function_number: function_number as u64,
+                                                statement_number: statement_number as u64,
+                                                offset: *offset - code_section_offset,
                                                 instruction: m.clone(),
                                             },
                                         ),
                                     );
                                 }
                             }
+
+                            // println!("Function: {}\n\n", cursor.position() - initial);
 
                             mutations
                         }),
@@ -93,12 +102,14 @@ impl WasmModule {
                 let bodies = code_section.bodies_mut();
 
                 for (function_number, func_body) in bodies.iter_mut().enumerate() {
-                    if function_number != mutation.function_number {
+                    if function_number as u64 != mutation.function_number {
                         continue;
                     }
                     let instructions = func_body.code_mut().elements_mut();
 
-                    let instr = instructions.get_mut(mutation.statement_number).unwrap();
+                    let instr = instructions
+                        .get_mut(mutation.statement_number as usize)
+                        .unwrap();
 
                     *instr = mutation.instruction.parity_instruction();
                 }
@@ -119,9 +130,11 @@ impl WasmModule {
 
         for section in self.module.sections() {
             if let elements::Section::Code(ref code_section) = *section {
-
                 for (idx, _) in code_section.bodies().iter().enumerate() {
-                    let name = all_names.get(idx as u32 + number_of_imports).unwrap().as_str();
+                    let name = all_names
+                        .get(idx as u32 + number_of_imports)
+                        .unwrap()
+                        .as_str();
                     functions.push(name);
                 }
             }

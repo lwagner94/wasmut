@@ -2,14 +2,13 @@ use std::sync::Arc;
 
 use wasmer::wasmparser::Operator;
 use wasmer::CompilerConfig;
-use wasmer_compiler_cranelift::Cranelift;
 use wasmer_compiler_singlepass::Singlepass;
 use wasmer_engine_universal::Universal;
 use wasmer_middlewares::{
     metering::{get_remaining_points, set_remaining_points, MeteringPoints},
     Metering,
 };
-use wasmer_wasi::{WasiError, WasiState, Pipe};
+use wasmer_wasi::{Pipe, WasiError, WasiState};
 
 use crate::{
     error::{Error, Result},

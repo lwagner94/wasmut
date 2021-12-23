@@ -8,10 +8,10 @@ use crate::runtime::wasmer::WasmerRuntime;
 #[cfg(feature = "runtime-wasmtime")]
 use crate::runtime::wasmtime::WasmtimeRuntime;
 
-use crate::wasmmodule::WasmModule;
 use crate::policy::ExecutionPolicy;
+use crate::wasmmodule::WasmModule;
 
-use crate::error::{Result, Error};
+use crate::error::{Error, Result};
 
 use crate::{ExecutionResult, TestFunction};
 
@@ -41,13 +41,15 @@ use RuntimeType::*;
 #[allow(unreachable_patterns)]
 pub fn create_runtime(rt: RuntimeType, module: WasmModule) -> Result<Box<dyn Runtime>> {
     match rt {
-        
-        #[cfg(feature = "runtime-wasmtime")] Wasmtime => Ok(Box::new(WasmtimeRuntime::new(module)?)),
-        #[cfg(feature = "runtime-wasmer")] Wasmer => Ok(Box::new(WasmerRuntime::new(module)?)),
-        _ => Err(Error::RuntimeNotAvailable)
+        #[cfg(feature = "runtime-wasmtime")]
+        Wasmtime => Ok(Box::new(WasmtimeRuntime::new(module)?)),
+        #[cfg(feature = "runtime-wasmer")]
+        Wasmer => Ok(Box::new(WasmerRuntime::new(module)?)),
+        _ => Err(Error::RuntimeNotAvailable),
     }
 }
 
+#[allow(clippy::vec_init_then_push)]
 pub fn get_runtime_types() -> Vec<RuntimeType> {
     let mut runtimes = Vec::new();
     #[cfg(feature = "runtime-wasmtime")]

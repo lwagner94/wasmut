@@ -1,8 +1,9 @@
 use anyhow::Result;
-use clap::{App, Arg, SubCommand, ArgMatches, AppSettings};
+use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 
 use rayon::prelude::*;
 use wasmut::{
+    addressresolver::AddressResolver,
     policy::{ExecutionPolicy, MutationPolicyBuilder},
     runtime::{create_runtime, RuntimeType},
     wasmmodule::WasmModule,
@@ -29,6 +30,19 @@ fn build_argparser() -> ArgMatches<'static> {
                     .required(true),
             ),
         )
+        .subcommand(
+            SubCommand::with_name("lookup")
+                .arg(
+                    Arg::with_name("INPUT")
+                        .help("Sets the input file to use")
+                        .required(true),
+                )
+                .arg(
+                    Arg::with_name("ADDR")
+                        .help("Address to look up")
+                        .required(true),
+                ),
+        )
         .get_matches()
 }
 
@@ -41,9 +55,17 @@ fn list_functions(wasmfile: &str) -> Result<()> {
     Ok(())
 }
 
-fn mutate(wasmfile: &str) -> Result<()> {
-   use std::time;
+fn lookup(wasmfile: &str, addr: u64) -> Result<()> {
+    let bytes = std::fs::read(wasmfile).unwrap();
+    let resolver = AddressResolver::new(&bytes);
 
+    dbg!(resolver.lookup_address(addr)?);
+
+    Ok(())
+}
+
+fn mutate(wasmfile: &str) -> Result<()> {
+    use std::time;
 
     let module = WasmModule::from_file(wasmfile)?;
 
@@ -51,17 +73,16 @@ fn mutate(wasmfile: &str) -> Result<()> {
     dbg!(&runtime_type);
     let start = time::Instant::now();
     let mut runtime = create_runtime(runtime_type, module.clone())?;
-    println!("Created runtime in {}s.", start.elapsed().as_millis() as f64 / 1000.0);
+    println!(
+        "Created runtime in {}s.",
+        start.elapsed().as_millis() as f64 / 1000.0
+    );
     let entry_point = runtime.discover_entry_point().unwrap();
     let tests = vec![entry_point];
 
-    let mutation_policy = MutationPolicyBuilder::new()
-        .allow_function("^factorial")
-        .build()?;
+    let mutation_policy = MutationPolicyBuilder::new().allow_function("").build()?;
 
-    
     let mutations = module.discover_mutation_positions(&mutation_policy);
-    
 
     //dbg!(&mutations);
     //dbg!(&mutations.len());
@@ -79,7 +100,10 @@ fn mutate(wasmfile: &str) -> Result<()> {
 
                 for test in &tests {
                     match runtime
-                        .call_test_function(test, ExecutionPolicy::RunUntilLimit { limit: 10000000 })
+                        .call_test_function(
+                            test,
+                            ExecutionPolicy::RunUntilLimit { limit: 10000000 },
+                        )
                         .unwrap()
                     {
                         ExecutionResult::FunctionReturn { return_value, .. } => {
@@ -98,12 +122,12 @@ fn mutate(wasmfile: &str) -> Result<()> {
                             killed += 1;
                             println!("timeout");
                             break;
-                        },
+                        }
                         ExecutionResult::Error => {
                             killed += 1;
                             println!("Error.");
                             break;
-                        },
+                        }
                     }
                 }
 
@@ -133,7 +157,12 @@ fn main() -> Result<()> {
         mutate(input_file)?;
     }
 
-    Ok(())
+    if let Some(cli) = cli.subcommand_matches("lookup") {
+        let input_file = cli.value_of("INPUT").unwrap();
+        let addr = cli.value_of("ADDR").unwrap().parse::<u64>().unwrap();
 
- 
+        lookup(input_file, addr)?;
+    }
+
+    Ok(())
 }

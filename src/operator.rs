@@ -137,7 +137,8 @@ impl MutableInstruction {
 
 #[derive(Debug)]
 pub struct Mutation {
-    pub function_number: usize,
-    pub statement_number: usize,
+    pub function_number: u64,
+    pub statement_number: u64,
+    pub offset: u64,
     pub instruction: MutableInstruction,
 }
