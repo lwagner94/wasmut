@@ -32,7 +32,6 @@ fn load_file_section<Endian: gimli::Endianity>(
     endian: Endian,
 ) -> core::result::Result<EndianRcSlice<Endian>, ()> {
     let name = id.name();
-    dbg!(&name);
     match file.section_by_name(name) {
         Some(section) => match section.uncompressed_data().unwrap() {
             Cow::Borrowed(b) => Ok(EndianRcSlice::new(Rc::from(b), endian)),
@@ -66,8 +65,11 @@ impl<'data> AddressResolver<'data> {
         while let Some(frame) = frames.next().unwrap() {
             let function_name = if let Some(func) = frame.function {
                 Some(function_name(&func.raw_name().unwrap(), func.language))
-            } else  {
-                self.symbols.get(addr).map(|x| x.name()).map(|name| function_name(name, None))  
+            } else {
+                self.symbols
+                    .get(addr)
+                    .map(|x| x.name())
+                    .map(|name| function_name(name, None))
             };
 
             let cl = code_location(frame.location);
@@ -127,30 +129,41 @@ mod tests {
         let bytes = read("testdata/simple_add/test.wasm")?;
         let resolver = AddressResolver::new(&bytes);
 
-        let path = PathBuf::from("./testdata/simple_add/test.c")
-            .canonicalize()
-            .unwrap();
+        let locations = resolver.lookup_address(100)?;
 
-        let locations = resolver.lookup_address(105)?;
-        assert_eq!(
-            locations,
-            CodeLocations {
-                locations: vec![
-                    CodeLocation {
-                        file: Some(path.clone(),),
-                        function: Some("test_add_2".into(),),
-                        line: None,
-                        column: Some(18,),
-                    },
-                    CodeLocation {
-                        file: Some(path.clone(),),
-                        function: Some("main".into(),),
-                        line: Some(21,),
-                        column: Some(30,),
-                    },
-                ],
-            }
-        );
+
+        assert!(locations.locations[0]
+            .file
+            .clone()
+            .unwrap()
+            .ends_with("testdata/simple_add/test.c"));
+        assert_eq!(locations.locations[0].function, Some("test_add_2".into()));
+        assert_eq!(locations.locations[0].line, Some(16));
+        assert_eq!(locations.locations[0].column, Some(18));
+
+        assert!(locations.locations[1]
+            .file
+            .clone()
+            .unwrap()
+            .ends_with("testdata/simple_add/test.c"));
+        assert_eq!(locations.locations[1].function, Some("main".into()));
+        assert_eq!(locations.locations[1].line, Some(21));
+        assert_eq!(locations.locations[1].column, Some(30));
+
+        Ok(())
+    }
+
+    #[test]
+    fn start_function() -> Result<()> {
+        let bytes = read("testdata/simple_add/test.wasm")?;
+        let resolver = AddressResolver::new(&bytes);
+
+        let locations = resolver.lookup_address(10)?;
+
+        assert_eq!(locations.locations[0].file, None);
+        assert_eq!(locations.locations[0].function, Some("_start".into()));
+        assert_eq!(locations.locations[0].line, None);
+        assert_eq!(locations.locations[0].column, None);
 
         Ok(())
     }

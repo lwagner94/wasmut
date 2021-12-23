@@ -1,4 +1,3 @@
-
 use crate::{
     error::{Error, Result},
     policy::MutationPolicy,
@@ -15,7 +14,6 @@ pub struct WasmModule {
 impl WasmModule {
     // TODO: Allow wat
     pub fn from_file(path: &str) -> Result<WasmModule> {
-    
         let mut module = parity_wasm::elements::deserialize_file(path)
             .map_err(|e| Error::BytecodeDeserialization { source: e })?;
         module = module.parse_names().unwrap();
@@ -68,7 +66,6 @@ impl WasmModule {
                             for ((statement_number, parity_instr), offset) in
                                 instructions.iter().enumerate().zip(offsets)
                             {
-                                
                                 if let Some(instruction) =
                                     MutableInstruction::from_parity_instruction(parity_instr)
                                 {
