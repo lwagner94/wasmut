@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
+use clap::{AppSettings, Parser, Subcommand};
 use std::time;
 
 use rayon::prelude::*;
@@ -11,40 +11,23 @@ use wasmut::{
     ExecutionResult,
 };
 
-fn build_argparser() -> ArgMatches<'static> {
-    App::new("wasmut")
-        .version("0.0.1")
-        .author("Lukas Wagner <lwagner94@posteo.at>")
-        .about("Mutation testing for WebAssembly")
-        .setting(AppSettings::ColorAlways)
-        .subcommand(
-            SubCommand::with_name("list-functions").arg(
-                Arg::with_name("INPUT")
-                    .help("Sets the input file to use")
-                    .required(true),
-            ),
-        )
-        .subcommand(
-            SubCommand::with_name("mutate").arg(
-                Arg::with_name("INPUT")
-                    .help("Sets the input file to use")
-                    .required(true),
-            ),
-        )
-        .subcommand(
-            SubCommand::with_name("lookup")
-                .arg(
-                    Arg::with_name("INPUT")
-                        .help("Sets the input file to use")
-                        .required(true),
-                )
-                .arg(
-                    Arg::with_name("ADDR")
-                        .help("Address to look up")
-                        .required(true),
-                ),
-        )
-        .get_matches()
+#[derive(Parser)]
+#[clap(author, version, about, long_about = None)]
+#[clap(global_setting(AppSettings::PropagateVersion))]
+#[clap(global_setting(AppSettings::UseLongFormatForHelpSubcommand))]
+struct Cli {
+    #[clap(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// List all functions of the binary
+    ListFunctions { file: String },
+    /// Run mutants
+    Mutate { file: String },
+    /// Lookup an address
+    Lookup { file: String, address: u64 },
 }
 
 fn list_functions(wasmfile: &str) -> Result<()> {
@@ -144,25 +127,18 @@ fn mutate(wasmfile: &str) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let cli = build_argparser();
+    let cli = Cli::parse();
 
-    if let Some(cli) = cli.subcommand_matches("list-functions") {
-        let input_file = cli.value_of("INPUT").unwrap();
-
-        list_functions(input_file)?;
-    }
-
-    if let Some(cli) = cli.subcommand_matches("mutate") {
-        let input_file = cli.value_of("INPUT").unwrap();
-
-        mutate(input_file)?;
-    }
-
-    if let Some(cli) = cli.subcommand_matches("lookup") {
-        let input_file = cli.value_of("INPUT").unwrap();
-        let addr = cli.value_of("ADDR").unwrap().parse::<u64>().unwrap();
-
-        lookup(input_file, addr)?;
+    match &cli.command {
+        Commands::ListFunctions { file } => {
+            list_functions(&file)?;
+        }
+        Commands::Mutate { file } => {
+            mutate(&file)?;
+        }
+        Commands::Lookup { file, address } => {
+            lookup(&file, *address)?;
+        }
     }
 
     Ok(())
