@@ -1,4 +1,5 @@
 use crate::{
+    addressresolver::AddressResolver,
     error::{Error, Result},
     policy::MutationPolicy,
 };
@@ -9,26 +10,31 @@ use crate::operator::*;
 #[derive(Clone)]
 pub struct WasmModule {
     module: parity_wasm::elements::Module,
+    bytes: Vec<u8>,
 }
 
 impl WasmModule {
     // TODO: Allow wat
     pub fn from_file(path: &str) -> Result<WasmModule> {
-        let mut module = parity_wasm::elements::deserialize_file(path)
-            .map_err(|e| Error::BytecodeDeserialization { source: e })?;
-        module = module.parse_names().unwrap();
-        Ok(WasmModule { module })
+        let bytes = std::fs::read(path).map_err(|e| Error::IOError { source: e })?;
+        Self::from_bytes_owned(bytes)
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<WasmModule> {
         let bytes = Vec::from(bytes);
+        Self::from_bytes_owned(bytes)
+    }
+
+    fn from_bytes_owned(bytes: Vec<u8>) -> Result<WasmModule> {
         let mut module: Module = parity_wasm::elements::deserialize_buffer(&bytes)
             .map_err(|e| Error::BytecodeDeserialization { source: e })?;
         module = module.parse_names().unwrap();
-        Ok(WasmModule { module })
+        Ok(WasmModule { module, bytes })
     }
 
     pub fn discover_mutation_positions(&self, mutation_policy: &MutationPolicy) -> Vec<Mutation> {
+        let resolver = AddressResolver::new(&self.bytes);
+
         use parity_wasm::elements;
 
         let mut mutation_positions = Vec::new();
@@ -39,6 +45,8 @@ impl WasmModule {
         let names = self.module.names_section().unwrap();
         let all_names = names.functions().unwrap().names();
 
+        // let mutations =
+
         for section in self.module.sections() {
             // dbg!(section);
 
@@ -46,47 +54,64 @@ impl WasmModule {
                 let code_section_offset = code_section.offset();
                 let bodies = code_section.bodies();
 
-                mutation_positions.extend(
-                    bodies
-                        .iter()
-                        .enumerate()
-                        .filter(|filter_op| {
-                            let func_name = all_names
-                                .get(filter_op.0 as u32 + number_of_imports)
-                                .unwrap();
+                bodies
+                    .iter()
+                    .enumerate()
+                    .filter(|filter_op| {
+                        let func_name = all_names
+                            .get(filter_op.0 as u32 + number_of_imports)
+                            .unwrap();
 
-                            mutation_policy.check_function(func_name)
-                        })
-                        .flat_map(|(function_number, func_body)| {
-                            let instructions = func_body.code().elements();
-                            let offsets = func_body.code().offsets();
+                        mutation_policy.check_function(func_name)
+                    })
+                    .for_each(|(function_number, func_body)| {
+                        let instructions = func_body.code().elements();
+                        let offsets = func_body.code().offsets();
 
-                            let mut mutations: Vec<Mutation> = Vec::new();
+                        // let mut mutations: Vec<Mutation> = Vec::new();
 
-                            for ((statement_number, parity_instr), offset) in
-                                instructions.iter().enumerate().zip(offsets)
+                        for ((statement_number, parity_instr), offset) in
+                            instructions.iter().enumerate().zip(offsets)
+                        {
+                            let code_offset = *offset - code_section_offset;
+
+                            if let Some(instruction) =
+                                MutableInstruction::from_parity_instruction(parity_instr)
                             {
-                                if let Some(instruction) =
-                                    MutableInstruction::from_parity_instruction(parity_instr)
-                                {
-                                    mutations.extend(
+                                let mut should_mutate = false;
+
+                                let locations = resolver.lookup_address(code_offset).unwrap();
+                                let location = locations.locations.get(0).unwrap();
+
+                                if let Some(file) = &location.file {
+                                    // let s = String::from(file);
+                                    let os_string = file.clone().into_os_string();
+                                    let s = os_string.into_string().unwrap();
+                                    if mutation_policy.check_file(&s) {
+                                        should_mutate = true;
+                                    }
+                                }
+
+                                if let Some(function) = &location.function {
+                                    if mutation_policy.check_function(function) {
+                                        should_mutate = true;
+                                    }
+                                }
+                                if should_mutate {
+                                    mutation_positions.extend(
                                         instruction.generate_mutanted_instructions().iter().map(
                                             |m| Mutation {
                                                 function_number: function_number as u64,
                                                 statement_number: statement_number as u64,
-                                                offset: *offset - code_section_offset,
+                                                offset: code_offset,
                                                 instruction: m.clone(),
                                             },
                                         ),
                                     );
                                 }
                             }
-
-                            // println!("Function: {}\n\n", cursor.position() - initial);
-
-                            mutations
-                        }),
-                );
+                        }
+                    });
             }
         }
 
@@ -180,7 +205,7 @@ mod tests {
     #[test]
     fn test_discover_mutation_positions() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        let positions = module.discover_mutation_positions(&MutationPolicy::default());
+        let positions = module.discover_mutation_positions(&MutationPolicy::allow_all());
 
         assert!(positions.len() > 0);
         Ok(())
@@ -189,7 +214,7 @@ mod tests {
     #[test]
     fn test_mutation() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        let positions = module.discover_mutation_positions(&MutationPolicy::default());
+        let positions = module.discover_mutation_positions(&MutationPolicy::allow_all());
         let mut mutant = module.clone();
         mutant.mutate(&positions[0]);
 

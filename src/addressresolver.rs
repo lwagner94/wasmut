@@ -10,15 +10,15 @@ use std::{borrow::Cow, path::PathBuf, rc::Rc};
 
 #[derive(Debug, Default, PartialEq)]
 pub struct CodeLocation {
-    file: Option<PathBuf>,
-    function: Option<String>,
-    line: Option<u32>,
-    column: Option<u32>,
+    pub file: Option<PathBuf>,
+    pub function: Option<String>,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
 }
 
 #[derive(Debug, Default, PartialEq)]
 pub struct CodeLocations {
-    locations: Vec<CodeLocation>,
+    pub locations: Vec<CodeLocation>,
 }
 
 pub struct AddressResolver<'data> {
@@ -130,7 +130,6 @@ mod tests {
         let resolver = AddressResolver::new(&bytes);
 
         let locations = resolver.lookup_address(100)?;
-
 
         assert!(locations.locations[0]
             .file

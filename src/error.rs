@@ -2,6 +2,9 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
+    #[error("IO Error")]
+    IOError { source: std::io::Error },
+
     #[error("bytecode deserialization failed")]
     BytecodeDeserialization {
         source: parity_wasm::elements::Error,

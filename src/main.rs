@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
+use std::time;
 
 use rayon::prelude::*;
 use wasmut::{
@@ -59,14 +60,14 @@ fn lookup(wasmfile: &str, addr: u64) -> Result<()> {
     let bytes = std::fs::read(wasmfile).unwrap();
     let resolver = AddressResolver::new(&bytes);
 
-    dbg!(resolver.lookup_address(addr)?);
+    let res = resolver.lookup_address(addr)?;
+
+    dbg!(res);
 
     Ok(())
 }
 
 fn mutate(wasmfile: &str) -> Result<()> {
-    use std::time;
-
     let module = WasmModule::from_file(wasmfile)?;
 
     let runtime_type = RuntimeType::Wasmer;
@@ -85,7 +86,7 @@ fn mutate(wasmfile: &str) -> Result<()> {
     let mutations = module.discover_mutation_positions(&mutation_policy);
 
     //dbg!(&mutations);
-    //dbg!(&mutations.len());
+    dbg!(&mutations.len());
 
     let start = time::Instant::now();
 
