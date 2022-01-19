@@ -35,4 +35,8 @@ object = { git = "https://github.com/lwagner94/object", branch="wasm-extended-na
 addr2line = "0.17.0"
 gimli = "0.26.1"
 
-config = "0.11.0"
+toml = "0.5.0"
+serde = { version = "1.0", features = ["derive"] }
+
+colour = "0.6.0"
+log = "0.4.0"

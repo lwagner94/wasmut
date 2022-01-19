@@ -39,9 +39,11 @@ impl Runtime for WasmerRuntime {
             .map_err(|e| Error::RuntimeCreation { source: e.into() })?;
 
         let stdout = Box::new(Pipe::new());
+        let stderr = Box::new(Pipe::new());
 
         let mut wasi_env = WasiState::new("command-name")
             .stdout(stdout)
+            .stderr(stderr)
             .finalize()
             .map_err(|e| Error::RuntimeCreation { source: e.into() })?;
 
@@ -117,6 +119,7 @@ impl Runtime for WasmerRuntime {
                         // } else {
                         //     Ok(ExecutionResult::Error)
                         // }
+                        // dbg!(&e);
                         if let Ok(wasi_err) = e.downcast() {
                             match wasi_err {
                                 WasiError::Exit(exit_code) => {

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::{
     addressresolver::AddressResolver,
     error::{Error, Result},
@@ -20,6 +22,7 @@ impl WasmModule {
         Self::from_bytes_owned(bytes)
     }
 
+    // TODO: Refactor, just always use Vec directly
     pub fn from_bytes(bytes: &[u8]) -> Result<WasmModule> {
         let bytes = Vec::from(bytes);
         Self::from_bytes_owned(bytes)
@@ -39,11 +42,11 @@ impl WasmModule {
 
         let mut mutation_positions = Vec::new();
 
-        let number_of_imports = self.module.import_count(ImportCountType::Function) as u32;
+        // let number_of_imports = self.module.import_count(ImportCountType::Function) as u32;
 
         // let start = time::Instant::now();
-        let names = self.module.names_section().unwrap();
-        let all_names = names.functions().unwrap().names();
+        // let names = self.module.names_section().unwrap();
+        // let all_names = names.functions().unwrap().names();
 
         // let mutations =
 
@@ -57,13 +60,12 @@ impl WasmModule {
                 bodies
                     .iter()
                     .enumerate()
-                    .filter(|filter_op| {
-                        let func_name = all_names
-                            .get(filter_op.0 as u32 + number_of_imports)
-                            .unwrap();
-
-                        mutation_policy.check_function(func_name)
-                    })
+                    // .filter(|filter_op| {
+                    //     let func_name = all_names
+                    //         .get(filter_op.0 as u32 + number_of_imports)
+                    //         .unwrap();
+                    //     mutation_policy.check_function(func_name)
+                    // })
                     .for_each(|(function_number, func_body)| {
                         let instructions = func_body.code().elements();
                         let offsets = func_body.code().offsets();
@@ -163,6 +165,44 @@ impl WasmModule {
         }
 
         functions
+    }
+
+    pub fn source_files(&self) -> HashSet<String> {
+        let resolver = AddressResolver::new(&self.bytes);
+        use parity_wasm::elements;
+
+        let mut files = HashSet::new();
+
+        for section in self.module.sections() {
+            // dbg!(section);
+
+            if let elements::Section::Code(ref code_section) = *section {
+                let code_section_offset = code_section.offset();
+                let bodies = code_section.bodies();
+
+                bodies.iter().enumerate().for_each(|(_, func_body)| {
+                    let instructions = func_body.code().elements();
+                    let offsets = func_body.code().offsets();
+
+                    // let mut mutations: Vec<Mutation> = Vec::new();
+
+                    for (_, offset) in instructions.iter().enumerate().zip(offsets) {
+                        let code_offset = *offset - code_section_offset;
+
+                        let locations = resolver.lookup_address(code_offset).unwrap();
+                        let location = locations.locations.get(0).unwrap();
+
+                        if let Some(file) = &location.file {
+                            let os_string = file.clone().into_os_string();
+                            let s = os_string.into_string().unwrap();
+                            files.insert(s);
+                        }
+                    }
+                });
+            }
+        }
+
+        files
     }
 }
 

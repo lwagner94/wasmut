@@ -5,7 +5,8 @@ use std::time;
 use rayon::prelude::*;
 use wasmut::{
     addressresolver::AddressResolver,
-    policy::{ExecutionPolicy, MutationPolicyBuilder},
+    load_config,
+    policy::{ExecutionPolicy, MutationPolicy},
     runtime::{create_runtime, RuntimeType},
     wasmmodule::WasmModule,
     ExecutionResult,
@@ -23,23 +24,72 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// List all functions of the binary
-    ListFunctions { file: String },
+    ListFunctions {
+        /// Path to wasmut.toml configuration
+        #[clap(short, long)]
+        config: Option<String>,
+        file: String,
+    },
+    /// List all files
+    ListFiles {
+        /// Path to wasmut.toml configuration
+        #[clap(short, long)]
+        config: Option<String>,
+        file: String,
+    },
     /// Run mutants
-    Mutate { file: String },
+    Mutate {
+        /// Path to wasmut.toml configuration
+        #[clap(short, long)]
+        config: Option<String>,
+        file: String,
+    },
     /// Lookup an address
-    Lookup { file: String, address: u64 },
+    Lookup {
+        /// Path to wasmut.toml configuration
+        #[clap(short, long)]
+        config: Option<String>,
+        file: String,
+        address: u64,
+    },
 }
 
-fn list_functions(wasmfile: &str) -> Result<()> {
+fn list_functions(wasmfile: &str, config: Option<&str>) -> Result<()> {
+    let config = load_config(wasmfile, config)?;
     let module = WasmModule::from_file(wasmfile)?;
+    let policy = MutationPolicy::from_config(&config)?;
+
     for function in module.functions() {
-        println!("{}", function);
+        if policy.check_function(&function) {
+            colour::dark_green!("allowed: ")
+        } else {
+            colour::dark_red!("denied:  ")
+        }
+        println!("{function}");
     }
 
     Ok(())
 }
 
-fn lookup(wasmfile: &str, addr: u64) -> Result<()> {
+fn list_files(wasmfile: &str, config: Option<&str>) -> Result<()> {
+    let config = load_config(wasmfile, config)?;
+    let module = WasmModule::from_file(wasmfile)?;
+    let policy = MutationPolicy::from_config(&config)?;
+
+    for file in module.source_files() {
+        if policy.check_file(&file) {
+            colour::dark_green!("allowed: ")
+        } else {
+            colour::dark_red!("denied:  ")
+        }
+        println!("{file}");
+    }
+
+    Ok(())
+}
+
+fn lookup(wasmfile: &str, addr: u64, config: Option<&str>) -> Result<()> {
+    let _config = load_config(wasmfile, config)?;
     let bytes = std::fs::read(wasmfile).unwrap();
     let resolver = AddressResolver::new(&bytes);
 
@@ -50,7 +100,8 @@ fn lookup(wasmfile: &str, addr: u64) -> Result<()> {
     Ok(())
 }
 
-fn mutate(wasmfile: &str) -> Result<()> {
+fn mutate(wasmfile: &str, config: Option<&str>) -> Result<()> {
+    let config = load_config(wasmfile, config)?;
     let module = WasmModule::from_file(wasmfile)?;
 
     let runtime_type = RuntimeType::Wasmer;
@@ -64,7 +115,7 @@ fn mutate(wasmfile: &str) -> Result<()> {
     let entry_point = runtime.discover_entry_point().unwrap();
     let tests = vec![entry_point];
 
-    let mutation_policy = MutationPolicyBuilder::new().allow_function("").build()?;
+    let mutation_policy = MutationPolicy::from_config(&config)?;
 
     let mutations = module.discover_mutation_positions(&mutation_policy);
 
@@ -92,24 +143,30 @@ fn mutate(wasmfile: &str) -> Result<()> {
                     {
                         ExecutionResult::FunctionReturn { return_value, .. } => {
                             if test.expected_result != (return_value != 0) {
+                                println!("K");
                                 killed += 1;
                                 break;
+                            } else {
+                                println!("A");
                             }
                         }
                         ExecutionResult::ProcessExit { exit_code, .. } => {
                             if test.expected_result != (exit_code != 0) {
+                                println!("K");
                                 killed += 1;
                                 break;
+                            } else {
+                                println!("A");
                             }
                         }
                         ExecutionResult::LimitExceeded => {
                             killed += 1;
-                            println!("timeout");
+                            println!("T");
                             break;
                         }
                         ExecutionResult::Error => {
                             killed += 1;
-                            println!("Error.");
+                            println!("E");
                             break;
                         }
                     }
@@ -129,15 +186,22 @@ fn mutate(wasmfile: &str) -> Result<()> {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    match &cli.command {
-        Commands::ListFunctions { file } => {
-            list_functions(&file)?;
+    match cli.command {
+        Commands::ListFunctions { config, file } => {
+            list_functions(&file, config.as_deref())?;
         }
-        Commands::Mutate { file } => {
-            mutate(&file)?;
+        Commands::ListFiles { config, file } => {
+            list_files(&file, config.as_deref())?;
         }
-        Commands::Lookup { file, address } => {
-            lookup(&file, *address)?;
+        Commands::Mutate { file, config } => {
+            mutate(&file, config.as_deref())?;
+        }
+        Commands::Lookup {
+            file,
+            address,
+            config,
+        } => {
+            lookup(&file, address, config.as_deref())?;
         }
     }
 

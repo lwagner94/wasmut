@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::{config::Config, error::Result};
 
 use regex::Regex;
 
@@ -18,6 +18,7 @@ pub struct MutationPolicyBuilder {
     allowed_files: RegexListBuilder,
 }
 
+#[derive(Debug)]
 pub struct MutationPolicy {
     allowed_functions: RegexList,
     allowed_files: RegexList,
@@ -53,6 +54,12 @@ impl MutationPolicyBuilder {
     }
 }
 
+impl Default for MutationPolicyBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MutationPolicy {
     pub fn allow_all() -> Self {
         let mut builder = MutationPolicyBuilder::new();
@@ -61,12 +68,38 @@ impl MutationPolicy {
         builder.build().unwrap()
     }
 
-    pub fn check_function<T: AsRef<str>>(&self, func_name: T) -> bool {
-        self.allowed_functions.any(func_name)
+    pub fn from_config(config: &Config) -> Result<Self> {
+        let mut builder = MutationPolicyBuilder::new();
+
+        if let Some(allowed_files) = config
+            .filter
+            .as_ref()
+            .and_then(|filter| filter.allowed_files.as_ref())
+        {
+            for file in allowed_files {
+                builder = builder.allow_file(file);
+            }
+        }
+
+        if let Some(allowed_functions) = config
+            .filter
+            .as_ref()
+            .and_then(|filter| filter.allowed_functions.as_ref())
+        {
+            for function in allowed_functions {
+                builder = builder.allow_function(function);
+            }
+        }
+
+        builder.build()
     }
 
-    pub fn check_file<T: AsRef<str>>(&self, func_name: T) -> bool {
-        self.allowed_files.any(func_name)
+    pub fn check_function<T: AsRef<str>>(&self, name: T) -> bool {
+        self.allowed_functions.any(name)
+    }
+
+    pub fn check_file<T: AsRef<str>>(&self, name: T) -> bool {
+        self.allowed_files.any(name)
     }
 }
 
@@ -114,6 +147,8 @@ impl RegexList {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::MutationFilter;
+
     use super::*;
 
     #[test]
@@ -148,6 +183,27 @@ mod tests {
             .allow_file("^src/")
             .build()
             .unwrap();
+
+        assert!(policy.check_function("test_func1"));
+        assert!(policy.check_function("test_func2"));
+        assert!(policy.check_file("src/foo.rs"));
+        assert!(!policy.check_file("test/foo.rs"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn policy_from_config() -> Result<()> {
+        let config = {
+            let mut config: Config = Default::default();
+            config.filter = Some(MutationFilter::default());
+            let f = config.filter.as_mut().unwrap();
+            f.allowed_functions = Some(vec!["^test_".into()]);
+            f.allowed_files = Some(vec!["^src/".into()]);
+            config
+        };
+
+        let policy = MutationPolicy::from_config(&config)?;
 
         assert!(policy.check_function("test_func1"));
         assert!(policy.check_function("test_func2"));

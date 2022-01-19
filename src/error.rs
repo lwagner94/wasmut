@@ -5,6 +5,9 @@ pub enum Error {
     #[error("IO Error")]
     IOError { source: std::io::Error },
 
+    #[error("File `{0}` not found")]
+    FileNotFoundError(String),
+
     #[error("bytecode deserialization failed")]
     BytecodeDeserialization {
         source: parity_wasm::elements::Error,
@@ -32,6 +35,9 @@ pub enum Error {
 
     #[error("regex creation failed")] // TODO
     RegexError(#[from] regex::Error),
+
+    #[error("configuration erorr")]
+    ConfigError(#[from] toml::de::Error),
 
     #[error("unknown error")]
     Unknown,
