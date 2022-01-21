@@ -23,6 +23,9 @@ jobs:
         toolchain: nightly
         override: true
 
+    - name: Install grcov
+      run: if [[ ! -e ~/.cargo/bin/grcov ]]; then cargo install grcov; fi
+
     - uses: actions-rs/cargo@v1
       with:
         command: test
