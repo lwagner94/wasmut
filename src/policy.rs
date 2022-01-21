@@ -71,22 +71,14 @@ impl MutationPolicy {
     pub fn from_config(config: &Config) -> Result<Self> {
         let mut builder = MutationPolicyBuilder::new();
 
-        if let Some(allowed_files) = config
-            .filter
-            .as_ref()
-            .and_then(|filter| filter.allowed_files.as_ref())
-        {
-            for file in allowed_files {
+        if let Some(files) = &config.filter.allowed_files {
+            for file in files {
                 builder = builder.allow_file(file);
             }
         }
 
-        if let Some(allowed_functions) = config
-            .filter
-            .as_ref()
-            .and_then(|filter| filter.allowed_functions.as_ref())
-        {
-            for function in allowed_functions {
+        if let Some(functions) = &config.filter.allowed_functions {
+            for function in functions {
                 builder = builder.allow_function(function);
             }
         }
@@ -147,8 +139,6 @@ impl RegexList {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::MutationFilter;
-
     use super::*;
 
     #[test]
@@ -196,10 +186,8 @@ mod tests {
     fn policy_from_config() -> Result<()> {
         let config = {
             let mut config: Config = Default::default();
-            config.filter = Some(MutationFilter::default());
-            let f = config.filter.as_mut().unwrap();
-            f.allowed_functions = Some(vec!["^test_".into()]);
-            f.allowed_files = Some(vec!["^src/".into()]);
+            config.filter.allowed_functions = Some(vec!["^test_".into()]);
+            config.filter.allowed_files = Some(vec!["^src/".into()]);
             config
         };
 

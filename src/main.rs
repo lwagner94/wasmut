@@ -1,11 +1,11 @@
 use anyhow::Result;
 use clap::{AppSettings, Parser, Subcommand};
-use std::time;
+use std::{path::Path, time};
 
 use rayon::prelude::*;
 use wasmut::{
     addressresolver::AddressResolver,
-    load_config,
+    config::Config,
     policy::{ExecutionPolicy, MutationPolicy},
     runtime::{create_runtime, RuntimeType},
     wasmmodule::WasmModule,
@@ -17,6 +17,9 @@ use wasmut::{
 #[clap(global_setting(AppSettings::PropagateVersion))]
 #[clap(global_setting(AppSettings::UseLongFormatForHelpSubcommand))]
 struct Cli {
+    /// Path to wasmut.toml configuration
+    #[clap(short, long)]
+    config: Option<String>,
     #[clap(subcommand)]
     command: Commands,
 }
@@ -24,40 +27,18 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// List all functions of the binary
-    ListFunctions {
-        /// Path to wasmut.toml configuration
-        #[clap(short, long)]
-        config: Option<String>,
-        file: String,
-    },
+    ListFunctions {},
     /// List all files
-    ListFiles {
-        /// Path to wasmut.toml configuration
-        #[clap(short, long)]
-        config: Option<String>,
-        file: String,
-    },
+    ListFiles {},
     /// Run mutants
-    Mutate {
-        /// Path to wasmut.toml configuration
-        #[clap(short, long)]
-        config: Option<String>,
-        file: String,
-    },
+    Mutate {},
     /// Lookup an address
-    Lookup {
-        /// Path to wasmut.toml configuration
-        #[clap(short, long)]
-        config: Option<String>,
-        file: String,
-        address: u64,
-    },
+    Lookup { address: u64 },
 }
 
-fn list_functions(wasmfile: &str, config: Option<&str>) -> Result<()> {
-    let config = load_config(wasmfile, config)?;
-    let module = WasmModule::from_file(wasmfile)?;
-    let policy = MutationPolicy::from_config(&config)?;
+fn list_functions(config: &Config) -> Result<()> {
+    let module = WasmModule::from_file(&config.module.wasmfile)?;
+    let policy = MutationPolicy::from_config(config)?;
 
     for function in module.functions() {
         if policy.check_function(&function) {
@@ -71,10 +52,9 @@ fn list_functions(wasmfile: &str, config: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-fn list_files(wasmfile: &str, config: Option<&str>) -> Result<()> {
-    let config = load_config(wasmfile, config)?;
-    let module = WasmModule::from_file(wasmfile)?;
-    let policy = MutationPolicy::from_config(&config)?;
+fn list_files(config: &Config) -> Result<()> {
+    let module = WasmModule::from_file(&config.module.wasmfile)?;
+    let policy = MutationPolicy::from_config(config)?;
 
     for file in module.source_files() {
         if policy.check_file(&file) {
@@ -88,9 +68,8 @@ fn list_files(wasmfile: &str, config: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-fn lookup(wasmfile: &str, addr: u64, config: Option<&str>) -> Result<()> {
-    let _config = load_config(wasmfile, config)?;
-    let bytes = std::fs::read(wasmfile).unwrap();
+fn lookup(addr: u64, config: &Config) -> Result<()> {
+    let bytes = std::fs::read(&config.module.wasmfile).unwrap();
     let resolver = AddressResolver::new(&bytes);
 
     let res = resolver.lookup_address(addr)?;
@@ -100,9 +79,8 @@ fn lookup(wasmfile: &str, addr: u64, config: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-fn mutate(wasmfile: &str, config: Option<&str>) -> Result<()> {
-    let config = load_config(wasmfile, config)?;
-    let module = WasmModule::from_file(wasmfile)?;
+fn mutate(config: &Config) -> Result<()> {
+    let module = WasmModule::from_file(&config.module.wasmfile)?;
 
     let runtime_type = RuntimeType::Wasmer;
     dbg!(&runtime_type);
@@ -115,7 +93,7 @@ fn mutate(wasmfile: &str, config: Option<&str>) -> Result<()> {
     let entry_point = runtime.discover_entry_point().unwrap();
     let tests = vec![entry_point];
 
-    let mutation_policy = MutationPolicy::from_config(&config)?;
+    let mutation_policy = MutationPolicy::from_config(config)?;
 
     let mutations = module.discover_mutation_positions(&mutation_policy);
 
@@ -183,25 +161,33 @@ fn mutate(wasmfile: &str, config: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+use env_logger::Builder;
+use log::*;
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    Builder::new().filter_level(LevelFilter::max()).init();
+
+    let config_path = cli
+        .config
+        .as_deref()
+        .map_or(Path::new("./wasmut.toml"), Path::new);
+
+    let config = Config::parse_file(config_path)?;
+
     match cli.command {
-        Commands::ListFunctions { config, file } => {
-            list_functions(&file, config.as_deref())?;
+        Commands::ListFunctions {} => {
+            list_functions(&config)?;
         }
-        Commands::ListFiles { config, file } => {
-            list_files(&file, config.as_deref())?;
+        Commands::ListFiles {} => {
+            list_files(&config)?;
         }
-        Commands::Mutate { file, config } => {
-            mutate(&file, config.as_deref())?;
+        Commands::Mutate {} => {
+            mutate(&config)?;
         }
-        Commands::Lookup {
-            file,
-            address,
-            config,
-        } => {
-            lookup(&file, address, config.as_deref())?;
+        Commands::Lookup { address } => {
+            lookup(address, &config)?;
         }
     }
 
