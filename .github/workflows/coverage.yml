@@ -19,25 +19,26 @@ jobs:
 
     - uses: actions-rs/toolchain@v1
       with:
-        profile: minimal
         toolchain: nightly
         override: true
 
-    - name: Install grcov
-      run: if [[ ! -e ~/.cargo/bin/grcov ]]; then cargo install grcov; fi
 
     - uses: actions-rs/cargo@v1
       with:
         command: test
-        args: --no-default-features --no-fail-fast
+        args: --all-features --no-fail-fast
       env:
         CARGO_INCREMENTAL: '0'
         RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests'
         RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests'
 
 
-    - name: Run grcov
-      run: grcov . --binary-path target/debug/deps/ -s . -t lcov --branch --ignore-not-existing --ignore '../**' --ignore '/*' --ignore 'target/*' -o coverage.lcov
+    # - name: Run grcov
+    #   run: grcov . --binary-path target/debug/deps/ -s . -t lcov --branch --ignore-not-existing --ignore '../**' --ignore '/*' --ignore 'target/*' -o coverage.lcov
+
+    - id: coverage  
+      uses: actions-rs/grcov@v0.1
+
 
     - name: Coveralls upload
       uses: coverallsapp/github-action@master
