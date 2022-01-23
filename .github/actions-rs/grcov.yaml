@@ -3,7 +3,7 @@ ignore-not-existing: true
 llvm: true
 filter: covered
 output-type: lcov
-output-path: ./converage.lcov
+output-path: ./coverage.lcov
 #prefix-dir: /home/user/build/
 ignore:
   - "/*"
