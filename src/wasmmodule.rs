@@ -247,7 +247,7 @@ mod tests {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
         let positions = module.discover_mutation_positions(&MutationPolicy::allow_all());
 
-        assert!(positions.len() > 0);
+        assert!(!positions.is_empty());
         Ok(())
     }
 

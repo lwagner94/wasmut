@@ -1,8 +1,11 @@
 pub mod addressresolver;
 pub mod config;
 pub mod error;
+pub mod executor;
+pub mod mutation;
 pub mod operator;
 pub mod policy;
+pub mod reporter;
 pub mod runtime;
 pub mod wasmmodule;
 

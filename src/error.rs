@@ -5,7 +5,7 @@ pub enum Error {
     #[error("IO Error")]
     IOError { source: std::io::Error },
 
-    #[error("File `{0}` not found")]
+    #[error("File \"{0}\" not found")]
     FileNotFoundError(String),
 
     #[error("bytecode deserialization failed")]

@@ -3,26 +3,26 @@ use std::path::Path;
 use crate::error::{Error, Result};
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, Clone)]
 #[allow(unused)]
 pub struct ModuleConfig {
     pub wasmfile: String,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, Clone)]
 #[allow(unused)]
 pub struct MutationFilterConfig {
     pub allowed_files: Option<Vec<String>>,
     pub allowed_functions: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, Clone)]
 #[allow(unused)]
 pub struct EngineConfig {
-    pub threads: Option<u32>,
+    pub threads: Option<usize>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, Clone)]
 #[allow(unused)]
 pub struct Config {
     pub module: ModuleConfig,
