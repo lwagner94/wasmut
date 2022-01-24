@@ -5,23 +5,17 @@ edition = "2021"
 description = "wasmut: Mutation testing tool for WebAssembly"
 license = "MIT"
 
-[features]
-default = ["runtime-wasmer"]
-runtime-wasmtime = ["wasmtime", "wasmtime-wasi"]
-runtime-wasmer = ["wasmer", "wasmer-compiler-cranelift", "wasmer-compiler-singlepass", "wasmer-engine-universal", "wasmer-wasi", "wasmer-middlewares"]
 
 [dependencies]
 rayon = "1.5.1"
 
-wasmer = { version = "2.1.1", optional=true}
-wasmer-compiler-cranelift = {version = "2.1.1", optional=true}
-wasmer-compiler-singlepass = {version = "2.1.1", optional=true}
-wasmer-engine-universal = {version = "2.1.1", optional=true}
-wasmer-wasi = {version = "2.1.1", optional=true}
-wasmer-middlewares = {version = "2.1.1", optional=true}
+wasmer = { version = "2.1.1"}
+wasmer-compiler-cranelift = {version = "2.1.1"}
+wasmer-compiler-singlepass = {version = "2.1.1"}
+wasmer-engine-universal = {version = "2.1.1"}
+wasmer-wasi = {version = "2.1.1"}
+wasmer-middlewares = {version = "2.1.1"}
 
-wasmtime = {version = "0.33.0", optional=true}
-wasmtime-wasi = {version = "0.33.0", optional=true}
 
 parity-wasm = { git = "https://github.com/lwagner94/parity-wasm", branch="offsets" }
 #parity-wasm = { path = "../parity-wasm" }

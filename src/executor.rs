@@ -1,9 +1,6 @@
 use crate::policy::ExecutionPolicy;
 use crate::ExecutionResult;
-use crate::{
-    config::Config, error::Result, operator::Mutation, runtime, runtime::RuntimeType,
-    wasmmodule::WasmModule,
-};
+use crate::{config::Config, error::Result, operator::Mutation, runtime, wasmmodule::WasmModule};
 
 use indicatif::{ParallelProgressIterator, ProgressBar};
 
@@ -24,7 +21,7 @@ impl Executor {
         let pb = ProgressBar::new(mutations.len() as u64);
 
         let entry_point = {
-            let mut runtime = runtime::create_runtime(RuntimeType::Wasmer, module.clone())?;
+            let mut runtime = runtime::create_runtime(module.clone())?;
             runtime.discover_entry_point().unwrap()
         };
 
@@ -39,7 +36,7 @@ impl Executor {
                 // TODO: configurable and adaptive
                 let policy = ExecutionPolicy::RunUntilLimit { limit: 1000000 };
 
-                let mut runtime = runtime::create_runtime(RuntimeType::Wasmer, module).unwrap();
+                let mut runtime = runtime::create_runtime(module).unwrap();
                 let result = runtime.call_test_function(&entry_point, policy).unwrap();
 
                 match result {
