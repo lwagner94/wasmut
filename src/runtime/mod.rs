@@ -32,13 +32,18 @@ mod tests {
         let mut runtime = WasmerRuntime::new(module)?;
 
         let result = runtime.call_test_function(ExecutionPolicy::RunUntilReturn)?;
-        assert!(matches!(
-            result,
-            ExecutionResult::ProcessExit {
-                // cost: 18,
-                exit_code: 0
-            }
-        ));
+
+        if let ExecutionResult::ProcessExit {
+            exit_code,
+            execution_cost,
+        } = result
+        {
+            assert_eq!(exit_code, 0);
+            assert!(execution_cost > 20);
+            assert!(execution_cost < 60);
+        } else {
+            panic!();
+        }
 
         Ok(())
     }

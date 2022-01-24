@@ -57,10 +57,12 @@ impl Runtime for WasmerRuntime {
     }
 
     fn call_test_function(&mut self, policy: ExecutionPolicy) -> Result<ExecutionResult> {
-        match policy {
-            ExecutionPolicy::RunUntilLimit { limit } => set_remaining_points(&self.instance, limit),
-            ExecutionPolicy::RunUntilReturn => set_remaining_points(&self.instance, u64::MAX),
-        }
+        let execution_limit = match policy {
+            ExecutionPolicy::RunUntilLimit { limit } => limit,
+            ExecutionPolicy::RunUntilReturn => u64::MAX,
+        };
+
+        set_remaining_points(&self.instance, execution_limit);
 
         let func = self
             .instance
@@ -74,23 +76,24 @@ impl Runtime for WasmerRuntime {
 
         match result {
             Ok(result) => {
-                let _cost = if let MeteringPoints::Remaining(remaining) =
+                let execution_cost = if let MeteringPoints::Remaining(remaining) =
                     get_remaining_points(&self.instance)
                 {
-                    u64::MAX - remaining
+                    execution_limit - remaining
                 } else {
                     // TODO: Can this be cleaner?
-                    u64::MAX
+                    execution_limit
                 };
 
                 Ok(ExecutionResult::ProcessExit {
                     exit_code: result as u32,
+                    execution_cost,
                 })
             }
             Err(e) => {
                 match get_remaining_points(&self.instance) {
                     MeteringPoints::Exhausted => Ok(ExecutionResult::LimitExceeded),
-                    MeteringPoints::Remaining(_remaining) => {
+                    MeteringPoints::Remaining(remaining) => {
                         // use std::error::Error;
                         // if let Some(err) = e.source() {
 
@@ -101,7 +104,12 @@ impl Runtime for WasmerRuntime {
                         if let Ok(wasi_err) = e.downcast() {
                             match wasi_err {
                                 WasiError::Exit(exit_code) => {
-                                    Ok(ExecutionResult::ProcessExit { exit_code })
+                                    let execution_cost = execution_limit - remaining;
+
+                                    Ok(ExecutionResult::ProcessExit {
+                                        exit_code,
+                                        execution_cost,
+                                    })
                                 }
                                 WasiError::UnknownWasiVersion => Ok(ExecutionResult::Error),
                             }

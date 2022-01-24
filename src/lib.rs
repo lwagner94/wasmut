@@ -12,7 +12,7 @@ pub mod wasmmodule;
 #[derive(Debug)]
 pub enum ExecutionResult {
     // Normal termination
-    ProcessExit { exit_code: u32 },
+    ProcessExit { exit_code: u32, execution_cost: u64 },
     // Execution limit exceeded
     LimitExceeded,
 
