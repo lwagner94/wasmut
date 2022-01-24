@@ -10,12 +10,12 @@ use wasmer_middlewares::{
 };
 use wasmer_wasi::{Pipe, WasiError, WasiState};
 
+use crate::runtime::Runtime;
 use crate::{
     error::{Error, Result},
     policy::ExecutionPolicy,
-    ExecutionResult, TestFunctionType,
+    ExecutionResult,
 };
-use crate::{runtime::Runtime, TestFunction};
 
 use super::WasmModule;
 
@@ -56,13 +56,7 @@ impl Runtime for WasmerRuntime {
         Ok(WasmerRuntime { instance })
     }
 
-    fn call_test_function(
-        &mut self,
-        test_function: &TestFunction,
-        policy: ExecutionPolicy,
-    ) -> Result<ExecutionResult> {
-        let name = test_function.name.as_str();
-
+    fn call_test_function(&mut self, policy: ExecutionPolicy) -> Result<ExecutionResult> {
         match policy {
             ExecutionPolicy::RunUntilLimit { limit } => set_remaining_points(&self.instance, limit),
             ExecutionPolicy::RunUntilReturn => set_remaining_points(&self.instance, u64::MAX),
@@ -71,23 +65,12 @@ impl Runtime for WasmerRuntime {
         let func = self
             .instance
             .exports
-            .get_function(name)
+            .get_function("_start")
+            .map_err(|e| Error::RuntimeCall { source: e.into() })?
+            .native::<(), ()>()
             .map_err(|e| Error::RuntimeCall { source: e.into() })?;
 
-        let result = match test_function.function_type {
-            TestFunctionType::FuncReturningI32 => {
-                let native_func = func
-                    .native::<(), i32>()
-                    .map_err(|e| Error::RuntimeCall { source: e.into() })?;
-                native_func.call()
-            }
-            TestFunctionType::StartEntryPoint => {
-                let native_func = func
-                    .native::<(), ()>()
-                    .map_err(|e| Error::RuntimeCall { source: e.into() })?;
-                native_func.call().map(|_| 0)
-            }
-        };
+        let result = func.call().map(|_| 0);
 
         match result {
             Ok(result) => {
@@ -100,14 +83,9 @@ impl Runtime for WasmerRuntime {
                     u64::MAX
                 };
 
-                match test_function.function_type {
-                    TestFunctionType::StartEntryPoint => Ok(ExecutionResult::ProcessExit {
-                        exit_code: result as u32,
-                    }),
-                    TestFunctionType::FuncReturningI32 => Ok(ExecutionResult::FunctionReturn {
-                        return_value: result,
-                    }),
-                }
+                Ok(ExecutionResult::ProcessExit {
+                    exit_code: result as u32,
+                })
             }
             Err(e) => {
                 match get_remaining_points(&self.instance) {
@@ -134,40 +112,5 @@ impl Runtime for WasmerRuntime {
                 }
             }
         }
-    }
-
-    fn discover_test_functions(&mut self) -> Option<Vec<TestFunction>> {
-        let mut test_functions = Vec::new();
-
-        for (name, func) in self.instance.exports.iter() {
-            if let wasmer::Extern::Function(f) = func {
-                if f.native::<(), i32>().is_ok() {
-                    test_functions.push(TestFunction {
-                        name: name.clone(),
-                        expected_result: true,
-                        function_type: TestFunctionType::FuncReturningI32,
-                    });
-                }
-            }
-        }
-        Some(test_functions)
-    }
-
-    fn discover_entry_point(&mut self) -> Option<TestFunction> {
-        self.instance.exports.iter().find_map(|(name, func)| {
-            if let wasmer::Extern::Function(f) = func {
-                if name == "_start" && f.native::<(), ()>().is_ok() {
-                    Some(TestFunction {
-                        name: name.clone(),
-                        expected_result: false,
-                        function_type: TestFunctionType::StartEntryPoint,
-                    })
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
     }
 }

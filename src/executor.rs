@@ -20,11 +20,6 @@ impl Executor {
     ) -> Result<Vec<ExecutionOutcome>> {
         let pb = ProgressBar::new(mutations.len() as u64);
 
-        let entry_point = {
-            let mut runtime = runtime::create_runtime(module.clone())?;
-            runtime.discover_entry_point().unwrap()
-        };
-
         let outcomes = mutations
             .par_iter()
             .progress_with(pb.clone())
@@ -37,21 +32,14 @@ impl Executor {
                 let policy = ExecutionPolicy::RunUntilLimit { limit: 1000000 };
 
                 let mut runtime = runtime::create_runtime(module).unwrap();
-                let result = runtime.call_test_function(&entry_point, policy).unwrap();
+                let result = runtime.call_test_function(policy).unwrap();
 
                 match result {
-                    ExecutionResult::FunctionReturn { return_value, .. } => {
-                        if entry_point.expected_result != (return_value != 0) {
-                            ExecutionOutcome::Killed
-                        } else {
-                            ExecutionOutcome::Alive
-                        }
-                    }
                     ExecutionResult::ProcessExit { exit_code, .. } => {
-                        if entry_point.expected_result != (exit_code != 0) {
-                            ExecutionOutcome::Killed
-                        } else {
+                        if exit_code == 0 {
                             ExecutionOutcome::Alive
+                        } else {
+                            ExecutionOutcome::Killed
                         }
                     }
                     ExecutionResult::LimitExceeded => ExecutionOutcome::Timeout,
