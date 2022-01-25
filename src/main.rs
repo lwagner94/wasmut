@@ -109,11 +109,14 @@ fn run_main() -> Result<()> {
 
     info!("Loading configuration file {config_path:?}");
     let config = Config::parse_file(config_path)?;
-    let threads = config.engine.threads.unwrap_or_else(num_cpus::get);
+    let threads = config
+        .engine
+        .threads
+        .unwrap_or_else(|| num_cpus::get() as u64);
 
     info!("Using {threads} workers to run mutants");
     rayon::ThreadPoolBuilder::new()
-        .num_threads(threads)
+        .num_threads(threads as usize)
         .build_global()
         .unwrap();
 

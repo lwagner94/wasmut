@@ -16,10 +16,11 @@ pub struct MutationFilterConfig {
     pub allowed_functions: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize, Default, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 #[allow(unused)]
 pub struct EngineConfig {
-    pub threads: Option<usize>,
+    pub threads: Option<u64>,
+    pub timeout_multiplier: Option<f64>,
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
@@ -113,9 +114,12 @@ mod tests {
         let engine: EngineConfig = toml::from_str(
             r#"
         threads = 4
+        timeout_multiplier = 2
+
     "#,
         )?;
         assert_eq!(engine.threads, Some(4));
+        assert_eq!(engine.timeout_multiplier, Some(2.0));
         Ok(())
     }
 

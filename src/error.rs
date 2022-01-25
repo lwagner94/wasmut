@@ -39,6 +39,12 @@ pub enum Error {
     #[error("configuration erorr")]
     ConfigError(#[from] toml::de::Error),
 
+    #[error("Execution of module returned exit code {0}")]
+    WasmModuleNonzeroExit(u32),
+
+    #[error("Execution of module failed")]
+    WasmModuleFailed,
+
     #[error("unknown error")]
     Unknown,
 }

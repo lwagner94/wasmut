@@ -1,5 +1,6 @@
 pub mod addressresolver;
 pub mod config;
+pub mod defaults;
 pub mod error;
 pub mod executor;
 pub mod mutation;
