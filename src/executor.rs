@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use indicatif::{ParallelProgressIterator, ProgressBar};
 
 use crate::error::Error;
 use crate::policy::ExecutionPolicy;
@@ -7,22 +7,17 @@ use crate::{defaults, ExecutionResult};
 
 use rayon::prelude::*;
 
-type ProgressCallback = Box<dyn Fn(ExecutionOutcome) + Send>;
-
 pub struct Executor {
     timeout_multiplier: f64,
-    progress_callback: Option<Arc<Mutex<ProgressCallback>>>,
 }
 
 impl Executor {
-    pub fn new(config: &Config, callback: Option<ProgressCallback>) -> Self {
-        let cb = callback.map(|cb| Arc::new(Mutex::new(cb)));
+    pub fn new(config: &Config) -> Self {
         Executor {
             timeout_multiplier: config
                 .engine
                 .timeout_multiplier
                 .unwrap_or(defaults::TIMEOUT_MULTIPLIER),
-            progress_callback: cb,
         }
     }
 
@@ -54,9 +49,17 @@ impl Executor {
         let limit = (execution_cost as f64 * self.timeout_multiplier).ceil() as u64;
         log::info!("Setting timeout to {limit} cycles");
 
+        let hidden = true;
+        let pb = if !hidden {
+            ProgressBar::new(mutations.len() as u64)
+        } else {
+            ProgressBar::hidden()
+        };
+
         let outcomes = mutations
             .par_iter()
-            .map_with(&self.progress_callback, |progress_callback, mutation| {
+            .progress_with(pb.clone())
+            .map(|mutation| {
                 // TODO: Remove mut by having clone_mutated() or something
                 let mut module = module.clone();
                 module.mutate(mutation);
@@ -66,7 +69,7 @@ impl Executor {
                 let mut runtime = runtime::create_runtime(module).unwrap();
                 let result = runtime.call_test_function(policy).unwrap();
 
-                let outcome = match result {
+                match result {
                     ExecutionResult::ProcessExit { exit_code, .. } => {
                         if exit_code == 0 {
                             ExecutionOutcome::Alive
@@ -76,15 +79,11 @@ impl Executor {
                     }
                     ExecutionResult::LimitExceeded => ExecutionOutcome::Timeout,
                     ExecutionResult::Error => ExecutionOutcome::ExecutionError,
-                };
-
-                if let Some(progress_callback) = progress_callback {
-                    progress_callback.lock().unwrap()(outcome.clone());
                 }
-
-                outcome
             })
             .collect();
+
+        pb.finish_and_clear();
 
         Ok(outcomes)
     }
@@ -101,15 +100,12 @@ pub enum ExecutionOutcome {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::AtomicBool;
-
-    use crate::mutation::MutationEngine;
 
     use super::*;
 
     fn execute_module(test_case: &str) -> Result<Vec<ExecutionOutcome>> {
         let module = WasmModule::from_file(&format!("testdata/{test_case}/test.wasm"))?;
-        let executor = Executor::new(&Config::default(), None);
+        let executor = Executor::new(&Config::default());
         executor.execute(&module, &[])
     }
 
@@ -131,26 +127,6 @@ mod tests {
     fn no_mutants() -> Result<()> {
         let result = execute_module("simple_add");
         assert!(matches!(result, Ok(..)));
-        Ok(())
-    }
-
-    #[test]
-    fn callback() -> Result<()> {
-        let called = Arc::new(AtomicBool::new(false));
-        let called_clone = called.clone();
-        let cb = move |_| called_clone.store(true, std::sync::atomic::Ordering::Relaxed);
-
-        let mut config = Config::parse_file("testdata/simple_add/wasmut.toml")?;
-        config.engine.threads = Some(1);
-        let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        let mutator = MutationEngine::new(&config)?;
-
-        let mutations = mutator.discover_mutation_positions(&module);
-
-        let executor = Executor::new(&config, Some(Box::new(cb)));
-        let result = executor.execute(&module, &mutations);
-        assert!(matches!(result, Ok(..)));
-        assert!(called.load(std::sync::atomic::Ordering::Relaxed));
         Ok(())
     }
 }

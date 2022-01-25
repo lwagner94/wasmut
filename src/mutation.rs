@@ -14,6 +14,8 @@ impl MutationEngine {
 
     pub fn discover_mutation_positions(&self, module: &WasmModule) -> Vec<Mutation> {
         // TODO: Move logic from WasmModule here
-        module.discover_mutation_positions(&self.mutation_policy)
+        let mutations = module.discover_mutation_positions(&self.mutation_policy);
+        log::info!("Generated {} mutations", mutations.len());
+        mutations
     }
 }

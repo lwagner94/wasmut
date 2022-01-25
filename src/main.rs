@@ -84,7 +84,7 @@ fn mutate(config: &Config) -> Result<()> {
     let mutator = MutationEngine::new(config)?;
     let mutations = mutator.discover_mutation_positions(&module);
 
-    let executor = Executor::new(config, None);
+    let executor = Executor::new(config);
     let outcomes = executor.execute(&module, &mutations)?;
 
     // dbg!(outcomes);
@@ -99,6 +99,7 @@ fn run_main() -> Result<()> {
     Builder::new()
         .filter_level(LevelFilter::Debug)
         .format_timestamp(None)
+        .format_target(false)
         .filter_module("wasmer_wasi", LevelFilter::Warn)
         .init();
 
