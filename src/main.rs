@@ -84,7 +84,7 @@ fn mutate(config: &Config) -> Result<()> {
     let mutator = MutationEngine::new(config)?;
     let mutations = mutator.discover_mutation_positions(&module);
 
-    let executor = Executor::new(config);
+    let executor = Executor::new(config, None);
     let outcomes = executor.execute(&module, &mutations)?;
 
     // dbg!(outcomes);
