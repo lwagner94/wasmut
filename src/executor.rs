@@ -68,18 +68,6 @@ impl Executor {
 
                 let mut runtime = runtime::create_runtime(module).unwrap();
                 runtime.call_test_function(policy).unwrap()
-
-                // match result {
-                //     ExecutionResult::ProcessExit { exit_code, .. } => {
-                //         if exit_code == 0 {
-                //             ExecutionOutcome::Alive
-                //         } else {
-                //             ExecutionOutcome::Killed
-                //         }
-                //     }
-                //     ExecutionResult::LimitExceeded => ExecutionOutcome::Timeout,
-                //     ExecutionResult::Error => ExecutionOutcome::ExecutionError,
-                // }
             })
             .collect();
 
