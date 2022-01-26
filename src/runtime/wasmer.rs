@@ -1,5 +1,10 @@
 use std::sync::Arc;
 
+use crate::{
+    error::{Error, Result},
+    policy::ExecutionPolicy,
+    runtime::{ExecutionResult, Runtime},
+};
 use wasmer::wasmparser::Operator;
 use wasmer::CompilerConfig;
 use wasmer_compiler_singlepass::Singlepass;
@@ -9,13 +14,6 @@ use wasmer_middlewares::{
     Metering,
 };
 use wasmer_wasi::{Pipe, WasiError, WasiState};
-
-use crate::runtime::Runtime;
-use crate::{
-    error::{Error, Result},
-    policy::ExecutionPolicy,
-    ExecutionResult,
-};
 
 use super::WasmModule;
 
@@ -92,7 +90,7 @@ impl Runtime for WasmerRuntime {
             }
             Err(e) => {
                 match get_remaining_points(&self.instance) {
-                    MeteringPoints::Exhausted => Ok(ExecutionResult::LimitExceeded),
+                    MeteringPoints::Exhausted => Ok(ExecutionResult::Timeout),
                     MeteringPoints::Remaining(remaining) => {
                         // use std::error::Error;
                         // if let Some(err) = e.source() {

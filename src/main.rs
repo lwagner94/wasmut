@@ -97,7 +97,7 @@ fn run_main() -> Result<()> {
     let cli = Cli::parse();
 
     Builder::new()
-        .filter_level(LevelFilter::Debug)
+        .filter_level(LevelFilter::Info)
         .format_timestamp(None)
         .format_target(false)
         .filter_module("wasmer_wasi", LevelFilter::Warn)

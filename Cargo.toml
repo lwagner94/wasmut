@@ -10,7 +10,6 @@ license = "MIT"
 rayon = "1.5.1"
 
 wasmer = { version = "2.1.1"}
-wasmer-compiler-cranelift = {version = "2.1.1"}
 wasmer-compiler-singlepass = {version = "2.1.1"}
 wasmer-engine-universal = {version = "2.1.1"}
 wasmer-wasi = {version = "2.1.1"}

@@ -3,7 +3,7 @@ use indicatif::{ParallelProgressIterator, ProgressBar};
 use crate::error::Error;
 use crate::policy::ExecutionPolicy;
 use crate::{config::Config, error::Result, operator::Mutation, runtime, wasmmodule::WasmModule};
-use crate::{defaults, ExecutionResult};
+use crate::{defaults, runtime::ExecutionResult};
 
 use rayon::prelude::*;
 
@@ -25,7 +25,7 @@ impl Executor {
         &self,
         module: &WasmModule,
         mutations: &[Mutation],
-    ) -> Result<Vec<ExecutionOutcome>> {
+    ) -> Result<Vec<ExecutionResult>> {
         let mut runtime = runtime::create_runtime(module.clone())?;
 
         let execution_cost = match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
@@ -39,7 +39,7 @@ impl Executor {
                     return Err(Error::WasmModuleNonzeroExit(exit_code));
                 }
             }
-            ExecutionResult::LimitExceeded => {
+            ExecutionResult::Timeout => {
                 panic!("Execution limit exceeded even though we set no limit!")
             }
             ExecutionResult::Error => return Err(Error::WasmModuleFailed),
@@ -49,7 +49,7 @@ impl Executor {
         let limit = (execution_cost as f64 * self.timeout_multiplier).ceil() as u64;
         log::info!("Setting timeout to {limit} cycles");
 
-        let hidden = true;
+        let hidden = false;
         let pb = if !hidden {
             ProgressBar::new(mutations.len() as u64)
         } else {
@@ -67,19 +67,19 @@ impl Executor {
                 let policy = ExecutionPolicy::RunUntilLimit { limit };
 
                 let mut runtime = runtime::create_runtime(module).unwrap();
-                let result = runtime.call_test_function(policy).unwrap();
+                runtime.call_test_function(policy).unwrap()
 
-                match result {
-                    ExecutionResult::ProcessExit { exit_code, .. } => {
-                        if exit_code == 0 {
-                            ExecutionOutcome::Alive
-                        } else {
-                            ExecutionOutcome::Killed
-                        }
-                    }
-                    ExecutionResult::LimitExceeded => ExecutionOutcome::Timeout,
-                    ExecutionResult::Error => ExecutionOutcome::ExecutionError,
-                }
+                // match result {
+                //     ExecutionResult::ProcessExit { exit_code, .. } => {
+                //         if exit_code == 0 {
+                //             ExecutionOutcome::Alive
+                //         } else {
+                //             ExecutionOutcome::Killed
+                //         }
+                //     }
+                //     ExecutionResult::LimitExceeded => ExecutionOutcome::Timeout,
+                //     ExecutionResult::Error => ExecutionOutcome::ExecutionError,
+                // }
             })
             .collect();
 
@@ -89,21 +89,12 @@ impl Executor {
     }
 }
 
-// TODO: Come up with a better name once ExecutionResult in lib.rs is refactored
-#[derive(Debug, Clone)]
-pub enum ExecutionOutcome {
-    Alive,
-    Timeout,
-    Killed,
-    ExecutionError,
-}
-
 #[cfg(test)]
 mod tests {
 
     use super::*;
 
-    fn execute_module(test_case: &str) -> Result<Vec<ExecutionOutcome>> {
+    fn execute_module(test_case: &str) -> Result<Vec<ExecutionResult>> {
         let module = WasmModule::from_file(&format!("testdata/{test_case}/test.wasm"))?;
         let executor = Executor::new(&Config::default());
         executor.execute(&module, &[])

@@ -5,9 +5,18 @@ use crate::wasmmodule::WasmModule;
 
 use crate::error::Result;
 
-use crate::ExecutionResult;
-
 use self::wasmer::WasmerRuntime;
+
+#[derive(Debug)]
+pub enum ExecutionResult {
+    // Normal termination
+    ProcessExit { exit_code: u32, execution_cost: u64 },
+    // Execution limit exceeded
+    Timeout,
+
+    // Other error
+    Error,
+}
 
 pub trait Runtime {
     fn new(module: WasmModule) -> Result<Self>
@@ -55,7 +64,7 @@ mod tests {
 
         let result = runtime.call_test_function(ExecutionPolicy::RunUntilLimit { limit: 1 })?;
 
-        assert!(matches!(result, ExecutionResult::LimitExceeded));
+        assert!(matches!(result, ExecutionResult::Timeout));
 
         Ok(())
     }

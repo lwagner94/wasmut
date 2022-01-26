@@ -1828,7 +1828,6 @@ dependencies = [
  "thiserror",
  "toml",
  "wasmer",
- "wasmer-compiler-cranelift",
  "wasmer-compiler-singlepass",
  "wasmer-engine-universal",
  "wasmer-middlewares",

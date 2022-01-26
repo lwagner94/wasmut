@@ -1,13 +1,19 @@
-use crate::executor::ExecutionOutcome;
+use crate::runtime::ExecutionResult;
 
-pub fn report_results(results: &[ExecutionOutcome]) {
+pub fn report_results(results: &[ExecutionResult]) {
     let r = results
         .iter()
         .fold((0, 0, 0, 0), |acc, outcome| match outcome {
-            ExecutionOutcome::Alive => (acc.0 + 1, acc.1, acc.2, acc.3),
-            ExecutionOutcome::Timeout => (acc.0, acc.1 + 1, acc.2, acc.3),
-            ExecutionOutcome::Killed => (acc.0, acc.1, acc.2 + 1, acc.3),
-            ExecutionOutcome::ExecutionError => (acc.0, acc.1, acc.2, acc.3 + 1),
+            ExecutionResult::ProcessExit { exit_code, .. } => {
+                if *exit_code == 0 {
+                    (acc.0 + 1, acc.1, acc.2, acc.3)
+                } else {
+                    (acc.0, acc.1, acc.2 + 1, acc.3)
+                }
+            }
+
+            ExecutionResult::Timeout => (acc.0, acc.1 + 1, acc.2, acc.3),
+            ExecutionResult::Error => (acc.0, acc.1, acc.2, acc.3 + 1),
         });
 
     log::info!("Alive: {}", r.0);
