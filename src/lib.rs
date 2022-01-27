@@ -8,4 +8,5 @@ pub mod operator;
 pub mod policy;
 pub mod reporter;
 pub mod runtime;
+mod templates;
 pub mod wasmmodule;

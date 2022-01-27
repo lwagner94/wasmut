@@ -3,7 +3,7 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("IO Error")]
-    IOError { source: std::io::Error },
+    IOError(#[from] std::io::Error),
 
     #[error("File \"{0}\" not found")]
     FileNotFoundError(String),
@@ -46,7 +46,7 @@ pub enum Error {
     WasmModuleFailed,
 
     #[error("unknown error")]
-    Unknown,
+    Unknown(#[source] anyhow::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

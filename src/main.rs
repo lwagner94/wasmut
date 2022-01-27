@@ -89,6 +89,7 @@ fn mutate(config: &Config) -> Result<()> {
 
     // dbg!(outcomes);
     reporter::report_results(&outcomes);
+    reporter::generate_html(config, &module, &mutations, &outcomes)?;
 
     Ok(())
 }
@@ -134,11 +135,7 @@ fn run_main() -> Result<()> {
         Commands::Lookup { address } => {
             lookup(address, &config)?;
         }
-        Commands::Test => {
-            // let e = Executor::new(&config);
-
-            // e.execute();
-        }
+        Commands::Test => {}
     }
 
     Ok(())

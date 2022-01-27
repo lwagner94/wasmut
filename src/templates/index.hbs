@@ -1,0 +1,16 @@
+{{#*inline "page"}}
+{{ file }}
+<ul>
+{{#each source_files}}
+    <li> 
+    {{#if this.link}}
+    <a href="{{this.link}}">{{this.name}}</a>    
+    {{else}}
+    {{this.name}}
+    {{/if}}
+</li>
+    
+{{/each}}
+</ul>
+{{/inline}}
+{{> base}}

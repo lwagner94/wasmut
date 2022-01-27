@@ -12,13 +12,14 @@ use crate::operator::*;
 #[derive(Clone)]
 pub struct WasmModule {
     module: parity_wasm::elements::Module,
-    bytes: Vec<u8>,
+    // TODO: Make this cleaner
+    pub bytes: Vec<u8>,
 }
 
 impl WasmModule {
     // TODO: Allow wat
     pub fn from_file(path: &str) -> Result<WasmModule> {
-        let bytes = std::fs::read(path).map_err(|e| Error::IOError { source: e })?;
+        let bytes = std::fs::read(path)?;
         Self::from_bytes_owned(bytes)
     }
 
@@ -139,6 +140,8 @@ impl WasmModule {
     }
 
     pub fn functions(&self) -> Vec<&str> {
+        // TODO: Use address resolver?
+
         use parity_wasm::elements;
 
         let mut functions = Vec::new();

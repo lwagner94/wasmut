@@ -1,0 +1,12 @@
+{{#*inline "page"}}
+{{ file }}
+<table>
+  {{#each lines}}
+  <tr>
+    <td>{{this.mutations}}</td>
+    <td>{{{this.code}}}</td>
+  </tr>
+  {{/each}}
+</table> 
+{{/inline}}
+{{> base}}

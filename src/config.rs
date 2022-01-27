@@ -43,7 +43,7 @@ impl Config {
             ));
         }
 
-        let s = std::fs::read_to_string(&path).map_err(|e| Error::IOError { source: e })?;
+        let s = std::fs::read_to_string(&path)?;
         let parent = path.as_ref().parent().unwrap();
 
         Self::parse(&s, parent)
