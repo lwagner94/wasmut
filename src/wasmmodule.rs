@@ -85,11 +85,8 @@ impl WasmModule {
                                 let locations = resolver.lookup_address(code_offset).unwrap();
                                 let location = locations.locations.get(0).unwrap();
 
-                                if let Some(file) = &location.file {
-                                    // let s = String::from(file);
-                                    let os_string = file.clone().into_os_string();
-                                    let s = os_string.into_string().unwrap();
-                                    if mutation_policy.check_file(&s) {
+                                if let Some(file) = location.file {
+                                    if mutation_policy.check_file(file) {
                                         should_mutate = true;
                                     }
                                 }
@@ -174,8 +171,6 @@ impl WasmModule {
         let mut files = HashSet::new();
 
         for section in self.module.sections() {
-            // dbg!(section);
-
             if let elements::Section::Code(ref code_section) = *section {
                 let code_section_offset = code_section.offset();
                 let bodies = code_section.bodies();
@@ -192,10 +187,8 @@ impl WasmModule {
                         let locations = resolver.lookup_address(code_offset).unwrap();
                         let location = locations.locations.get(0).unwrap();
 
-                        if let Some(file) = &location.file {
-                            let os_string = file.clone().into_os_string();
-                            let s = os_string.into_string().unwrap();
-                            files.insert(s);
+                        if let Some(file) = location.file {
+                            files.insert(file.into());
                         }
                     }
                 });

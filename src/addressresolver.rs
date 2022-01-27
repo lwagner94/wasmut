@@ -2,23 +2,23 @@ use crate::error::Result;
 use addr2line::{Context, Location};
 use gimli::{EndianRcSlice, SectionId};
 use object::{Object, ObjectSection, SymbolMap, SymbolMapName};
-use std::{borrow::Cow, path::PathBuf, rc::Rc};
+use std::{borrow::Cow, rc::Rc};
 
 // Partly based on https://github.com/gimli-rs/addr2line/blob/master/examples/addr2line.rs
 // Licensed under the MIT license, retrived on 2021-12-23
 // Copyright (c) 2016-2018 The gimli Developers
 
 #[derive(Debug, Default, PartialEq)]
-pub struct CodeLocation {
-    pub file: Option<PathBuf>,
+pub struct CodeLocation<'a> {
+    pub file: Option<&'a str>,
     pub function: Option<String>,
     pub line: Option<u32>,
     pub column: Option<u32>,
 }
 
 #[derive(Debug, Default, PartialEq)]
-pub struct CodeLocations {
-    pub locations: Vec<CodeLocation>,
+pub struct CodeLocations<'a> {
+    pub locations: Vec<CodeLocation<'a>>,
 }
 
 pub struct AddressResolver<'data> {
@@ -108,11 +108,9 @@ fn function_name(name: &str, language: Option<gimli::DwLang>) -> String {
     addr2line::demangle_auto(Cow::from(name), language).into()
 }
 
-fn code_location(location: Option<Location>) -> (Option<PathBuf>, Option<u32>, Option<u32>) {
+fn code_location(location: Option<Location>) -> (Option<&str>, Option<u32>, Option<u32>) {
     if let Some(ref loc) = location {
-        let file = loc.file.as_ref().unwrap();
-        let path = PathBuf::from(file);
-        (Some(path), loc.line, loc.column)
+        (loc.file, loc.line, loc.column)
     } else {
         (None, None, None)
     }
@@ -133,7 +131,6 @@ mod tests {
 
         assert!(locations.locations[0]
             .file
-            .clone()
             .unwrap()
             .ends_with("testdata/simple_add/test.c"));
         assert_eq!(locations.locations[0].function, Some("test_add_2".into()));
@@ -142,7 +139,6 @@ mod tests {
 
         assert!(locations.locations[1]
             .file
-            .clone()
             .unwrap()
             .ends_with("testdata/simple_add/test.c"));
         assert_eq!(locations.locations[1].function, Some("main".into()));
