@@ -4,3 +4,6 @@
 .cargo
 wasmut-report/
 wasmut.toml
+report/
+*.wat
+*.wasm

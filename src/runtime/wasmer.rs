@@ -1,13 +1,12 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::{
     policy::ExecutionPolicy,
     runtime::{ExecutionResult, Runtime},
 };
 use anyhow::{Context, Result};
-use wasmer::CompilerConfig;
-use wasmer::{wasmparser::Operator, ImportObject};
-use wasmer::{Instance, Module, Store};
+use wasmer::{wasmparser::Operator, Exports, ImportObject, Instance, Module, Store, WasmerEnv};
+use wasmer::{CompilerConfig, Function};
 use wasmer_compiler_singlepass::Singlepass;
 use wasmer_engine_universal::Universal;
 use wasmer_middlewares::{
@@ -16,10 +15,20 @@ use wasmer_middlewares::{
 };
 use wasmer_wasi::{Pipe, WasiError, WasiState};
 
+#[derive(WasmerEnv, Clone, Default)]
+struct TraceEnv {
+    points: Arc<Mutex<Vec<i64>>>,
+}
+
+fn trace(env: &TraceEnv, address: i64) {
+    let mut vec = env.points.lock().unwrap();
+    vec.push(address);
+}
 use super::WasmModule;
 
 pub struct WasmerRuntime {
     instance: wasmer::Instance,
+    trace_env: TraceEnv,
 }
 
 impl Runtime for WasmerRuntime {
@@ -29,12 +38,23 @@ impl Runtime for WasmerRuntime {
         map_dirs: &[(String, String)],
     ) -> Result<Self> {
         let store = create_store();
-        let wasmer_module = create_module(module, store)?;
-        let import_object = create_wasi_import_object(discard_output, map_dirs, &wasmer_module)?;
+        let wasmer_module = create_module(module, &store)?;
+        let mut import_object =
+            create_wasi_import_object(discard_output, map_dirs, &wasmer_module)?;
+
+        let mut exports = Exports::new();
+        let trace_env: TraceEnv = Default::default();
+
+        exports.insert(
+            "__wasmut_trace",
+            Function::new_native_with_env(&store, trace_env.clone(), trace),
+        );
+        import_object.register("wasmut_api", exports);
 
         Ok(WasmerRuntime {
             instance: Instance::new(&wasmer_module, &import_object)
                 .context("Failed to create wasmer instance")?,
+            trace_env,
         })
     }
 
@@ -55,6 +75,8 @@ impl Runtime for WasmerRuntime {
             .context("Failed to get native _start function")?;
 
         let result = func.call().map(|_| 0);
+
+        dbg!(&self.trace_env.points);
 
         match result {
             Ok(result) => {
@@ -111,9 +133,9 @@ fn create_store() -> Store {
     Store::new(&Universal::new(compiler_config).engine())
 }
 
-fn create_module(module: &WasmModule, store: Store) -> Result<Module, anyhow::Error> {
+fn create_module(module: &WasmModule, store: &Store) -> Result<Module, anyhow::Error> {
     let bytecode: Vec<u8> = module.to_bytes()?;
-    let module = Module::new(&store, &bytecode).context("Failed to create wasmer module")?;
+    let module = Module::new(store, &bytecode).context("Failed to create wasmer module")?;
 
     Ok(module)
 }

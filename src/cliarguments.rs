@@ -110,6 +110,19 @@ pub enum CLICommand {
         /// Path to the wasm module
         wasmfile: Option<String>,
     },
+
+    /// Calculate test coverage
+    Coverage {
+        /// Load wasmut.toml configuration file from the provided path
+        #[clap(short, long)]
+        config: Option<String>,
+
+        /// Attempt to load wasmut.toml from the same directory as the wasm module
+        #[clap(short = 'C', long)]
+        config_samedir: bool,
+        /// Path to the wasm module
+        wasmfile: String,
+    },
 }
 
 #[derive(ArgEnum, Clone, Debug)]

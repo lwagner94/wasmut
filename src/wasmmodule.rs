@@ -1,7 +1,10 @@
 use std::{borrow::Cow, collections::HashSet};
 
 use crate::{addressresolver::AddressResolver, mutation::Mutation};
-use parity_wasm::elements::{External, Instruction, Module, Type, ValueType};
+use parity_wasm::elements::{
+    External, FunctionType, ImportEntry, Instruction, Internal, Module, TableElementType, Type,
+    ValueType,
+};
 
 use anyhow::{Context, Result};
 
@@ -238,6 +241,139 @@ impl<'a> WasmModule<'a> {
         Ok(candidates)
     }
 
+    pub fn insert_trace_points(&mut self) {
+        let type_index = self.find_or_insert_type_signature();
+        let function_index = self.add_trace_function_import(type_index);
+
+        self.fix_call_instructions();
+        self.fix_tables();
+        self.fix_exports();
+
+        self.insert_calls(function_index);
+    }
+
+    fn find_or_insert_type_signature(&mut self) -> u32 {
+        let type_section = self
+            .module
+            .type_section_mut()
+            .expect("module does not have a type section, this is not expected!");
+
+        let types = type_section.types_mut();
+
+        let index = types
+            .iter()
+            .enumerate()
+            .filter_map(|(i, t)| {
+                let Type::Function(f) = t;
+                if f.params() == [ValueType::I64] && f.results().is_empty() {
+                    Some(i as u32)
+                } else {
+                    None
+                }
+            })
+            .next();
+
+        index.unwrap_or_else(|| {
+            types.push(Type::Function(FunctionType::new(
+                vec![ValueType::I64],
+                vec![],
+            )));
+            (types.len() - 1) as u32
+        })
+    }
+
+    fn add_trace_function_import(&mut self, type_index: u32) -> u32 {
+        // TODO: What should happen if there aren't imports there yet?
+        let import_section = self
+            .module
+            .import_section_mut()
+            .expect("TODO")
+            .entries_mut();
+
+        import_section.insert(
+            0,
+            ImportEntry::new(
+                "wasmut_api".into(),
+                "__wasmut_trace".into(),
+                External::Function(type_index),
+            ),
+        );
+
+        0
+    }
+
+    fn fix_tables(&mut self) {
+        if let Some(table_section) = self.module.table_section() {
+            let function_tables_indices = table_section
+                .entries()
+                .iter()
+                .enumerate()
+                .filter_map(|(i, table)| {
+                    if table.elem_type() == TableElementType::AnyFunc {
+                        Some(i as u32)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<HashSet<u32>>();
+
+            if let Some(element_section) = self.module.elements_section_mut() {
+                for entry in element_section.entries_mut() {
+                    if function_tables_indices.contains(&entry.index()) {
+                        entry
+                            .members_mut()
+                            .iter_mut()
+                            .for_each(|func_index| *func_index += 1)
+                    }
+                }
+            }
+        }
+    }
+
+    fn fix_call_instructions(&mut self) {
+        if let Some(code_section) = self.module.code_section_mut() {
+            for func_body in code_section.bodies_mut() {
+                for instruction in func_body.code_mut().elements_mut() {
+                    if let Instruction::Call(index) = instruction {
+                        *index += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    fn fix_exports(&mut self) {
+        if let Some(export_section) = self.module.export_section_mut() {
+            for entry in export_section.entries_mut() {
+                if let Internal::Function(index) = entry.internal_mut() {
+                    *index += 1;
+                }
+            }
+        }
+    }
+
+    fn insert_calls(&mut self, function_index: u32) {
+        if let Some(code_section) = self.module.code_section_mut() {
+            for func_body in code_section.bodies_mut() {
+                let offset = *func_body.code_mut().offsets().get(0).unwrap();
+                func_body
+                    .code_mut()
+                    .elements_mut()
+                    .insert(0, Instruction::Call(function_index));
+                func_body
+                    .code_mut()
+                    .elements_mut()
+                    .insert(0, Instruction::I64Const(offset as i64));
+
+                // for instruction in  {
+                //     if let Instruction::Call(index) = instruction {
+                //         *index += 1;
+                //     }
+                // }
+            }
+        }
+    }
+
     /// Serialize module
     ///
     /// Debug information that may have been present in the original module
@@ -371,6 +507,31 @@ mod tests {
             },
         ];
         assert_eq!(result, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn find_or_insert_type_signature_should_insert() -> Result<()> {
+        let mut module = WasmModule::from_file("testdata/factorial/test.wasm")?;
+        let index = module.find_or_insert_type_signature();
+        assert_eq!(index, 4);
+        Ok(())
+    }
+
+    #[test]
+    fn find_or_insert_type_signature_reuse() -> Result<()> {
+        let mut module = WasmModule::from_file("testdata/i64_param/test.wasm")?;
+        let index = module.find_or_insert_type_signature();
+        assert_eq!(index, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn add_trace_function_import_expected_function_index() -> Result<()> {
+        let mut module = WasmModule::from_file("testdata/i64_param/test.wasm")?;
+        let type_index = module.find_or_insert_type_signature();
+        let function_index = module.add_trace_function_import(type_index);
+        assert_eq!(function_index, 0);
         Ok(())
     }
 }

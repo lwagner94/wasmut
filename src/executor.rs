@@ -105,6 +105,31 @@ impl<'a> Executor<'a> {
 
         Ok(outcomes)
     }
+
+    pub fn execute_coverage(&self, module: &WasmModule) -> Result<()> {
+        let mut runtime = runtime::create_runtime(&module.clone(), true, &[])?;
+
+        let execution_cost = match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
+            ExecutionResult::ProcessExit {
+                exit_code,
+                execution_cost,
+            } => {
+                if exit_code == 0 {
+                    execution_cost
+                } else {
+                    bail!("Module without any mutations returned exit code {exit_code}");
+                }
+            }
+            ExecutionResult::Timeout => {
+                panic!("Execution limit exceeded even though we set no limit!")
+            }
+            ExecutionResult::Error => bail!("Module failed to execute"),
+        };
+
+        log::info!("Coverage executed in {execution_cost} cycles");
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
