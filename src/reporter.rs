@@ -139,20 +139,19 @@ fn map_mutants_to_files<'a, 'r>(
 ) -> FileMutantMap<'r, 'a> {
     let mut file_mapping = BTreeMap::new();
     for (mutation, result) in mutations.iter().zip(results) {
-        let location = resolver
-            .lookup_address(mutation.offset)
-            .expect("Lookup failed");
+        let location = resolver.lookup_address(mutation.offset);
 
-        if location.locations.is_empty() {
-            continue;
-        }
-
-        if let Some(file) = location.locations[0].file {
-            if let Some(line) = location.locations[0].line {
+        if let Some(location) = location {
+            if let (Some(file), Some(line)) = (location.file, location.line) {
                 let entry = file_mapping.entry(file).or_insert_with(BTreeMap::new);
                 let entry = entry.entry(line).or_insert_with(Vec::new);
                 entry.push((mutation, result));
             }
+        } else {
+            // This should not really happen, because normally
+            // we already have used the AdressResolver with the given offset
+            // when discovering mutants
+            log::warn!("Lookup for address {} failed", mutation.offset)
         }
     }
     file_mapping

@@ -1,15 +1,9 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use wasmut::{
-    policy::ExecutionPolicy,
-    runtime::{create_runtime, wasmer::WasmerRuntime},
-    wasmmodule::WasmModule,
-};
+use wasmut::{policy::ExecutionPolicy, runtime::create_runtime, wasmmodule::WasmModule};
 
 fn create_rt(module: WasmModule) {
-    create_runtime(module);
+    create_runtime(module).unwrap();
 }
-
-fn exec_module(runtime: &WasmerRuntime) {}
 
 fn criterion_benchmark(c: &mut Criterion) {
     let large_module = WasmModule::from_file("testdata/simple_rust/test.wasm").unwrap();

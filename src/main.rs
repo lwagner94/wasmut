@@ -72,7 +72,7 @@ fn lookup(addr: u64, config: &Config) -> Result<()> {
     let bytes = std::fs::read(&config.module.wasmfile).unwrap();
     let resolver = AddressResolver::new(&bytes);
 
-    let res = resolver.lookup_address(addr)?;
+    let res = resolver.lookup_address(addr);
 
     dbg!(res);
 

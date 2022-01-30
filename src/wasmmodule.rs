@@ -5,7 +5,7 @@ use crate::{
     error::{Error, Result},
     policy::MutationPolicy,
 };
-use parity_wasm::elements::{ImportCountType, Module};
+use parity_wasm::elements::Module;
 
 use crate::operator::*;
 
@@ -17,75 +17,46 @@ pub struct WasmModule {
 }
 
 impl WasmModule {
-    // TODO: Allow wat
     pub fn from_file(path: &str) -> Result<WasmModule> {
         let bytes = std::fs::read(path)?;
-        Self::from_bytes_owned(bytes)
+        Self::from_bytes(bytes)
     }
 
-    // TODO: Refactor, just always use Vec directly
-    pub fn from_bytes(bytes: &[u8]) -> Result<WasmModule> {
-        let bytes = Vec::from(bytes);
-        Self::from_bytes_owned(bytes)
-    }
-
-    fn from_bytes_owned(bytes: Vec<u8>) -> Result<WasmModule> {
-        let mut module: Module = parity_wasm::elements::deserialize_buffer(&bytes)
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<WasmModule> {
+        let module: Module = parity_wasm::elements::deserialize_buffer(&bytes)
             .map_err(|e| Error::BytecodeDeserialization { source: e })?;
-        module = module.parse_names().unwrap();
+
         Ok(WasmModule { module, bytes })
     }
 
     pub fn discover_mutation_positions(&self, mutation_policy: &MutationPolicy) -> Vec<Mutation> {
         let resolver = AddressResolver::new(&self.bytes);
 
-        use parity_wasm::elements;
-
         let mut mutation_positions = Vec::new();
 
-        // let number_of_imports = self.module.import_count(ImportCountType::Function) as u32;
+        if let Some(code_section) = self.module.code_section() {
+            let code_section_offset = code_section.offset();
+            code_section
+                .bodies()
+                .iter()
+                .enumerate()
+                .for_each(|(function_number, func_body)| {
+                    let instructions = func_body.code().elements();
+                    let offsets = func_body.code().offsets();
 
-        // let start = time::Instant::now();
-        // let names = self.module.names_section().unwrap();
-        // let all_names = names.functions().unwrap().names();
+                    for ((statement_number, parity_instr), offset) in
+                        instructions.iter().enumerate().zip(offsets)
+                    {
+                        let code_offset = *offset - code_section_offset;
 
-        // let mutations =
-
-        for section in self.module.sections() {
-            // dbg!(section);
-
-            if let elements::Section::Code(ref code_section) = *section {
-                let code_section_offset = code_section.offset();
-                let bodies = code_section.bodies();
-
-                bodies
-                    .iter()
-                    .enumerate()
-                    // .filter(|filter_op| {
-                    //     let func_name = all_names
-                    //         .get(filter_op.0 as u32 + number_of_imports)
-                    //         .unwrap();
-                    //     mutation_policy.check_function(func_name)
-                    // })
-                    .for_each(|(function_number, func_body)| {
-                        let instructions = func_body.code().elements();
-                        let offsets = func_body.code().offsets();
-
-                        // let mut mutations: Vec<Mutation> = Vec::new();
-
-                        for ((statement_number, parity_instr), offset) in
-                            instructions.iter().enumerate().zip(offsets)
+                        if let Some(instruction) =
+                            MutableInstruction::from_parity_instruction(parity_instr)
                         {
-                            let code_offset = *offset - code_section_offset;
+                            // TODO: Refactor this, this is really ugly
+                            let location = resolver.lookup_address(code_offset);
 
-                            if let Some(instruction) =
-                                MutableInstruction::from_parity_instruction(parity_instr)
-                            {
+                            if let Some(location) = location {
                                 let mut should_mutate = false;
-
-                                let locations = resolver.lookup_address(code_offset).unwrap();
-                                let location = locations.locations.get(0).unwrap();
-
                                 if let Some(file) = location.file {
                                     if mutation_policy.check_file(file) {
                                         should_mutate = true;
@@ -111,94 +82,66 @@ impl WasmModule {
                                 }
                             }
                         }
-                    });
-            }
+                    }
+                });
         }
 
         mutation_positions
     }
 
     pub fn mutate(&mut self, mutation: &Mutation) {
-        for section in self.module.sections_mut() {
-            if let parity_wasm::elements::Section::Code(ref mut code_section) = *section {
-                let bodies = code_section.bodies_mut();
+        let instruction = self
+            .module
+            .code_section_mut()
+            .expect("Module does not have a code section")
+            .bodies_mut()
+            .get_mut(mutation.function_number as usize)
+            .expect("unexpected funtion index")
+            .code_mut()
+            .elements_mut()
+            .get_mut(mutation.statement_number as usize)
+            .expect("unexpected instruction index");
 
-                for (function_number, func_body) in bodies.iter_mut().enumerate() {
-                    if function_number as u64 != mutation.function_number {
-                        continue;
-                    }
-                    let instructions = func_body.code_mut().elements_mut();
-
-                    let instr = instructions
-                        .get_mut(mutation.statement_number as usize)
-                        .unwrap();
-
-                    *instr = mutation.instruction.parity_instruction();
-                }
-            }
-        }
+        *instruction = mutation.instruction.parity_instruction();
     }
 
-    pub fn functions(&self) -> Vec<&str> {
-        // TODO: Use address resolver?
-
-        use parity_wasm::elements;
-
-        let mut functions = Vec::new();
-
-        // TODO: Extract function
-        let number_of_imports = self.module.import_count(ImportCountType::Function) as u32;
-
-        let names = self.module.names_section().unwrap();
-        let all_names = names.functions().unwrap().names();
-
-        for section in self.module.sections() {
-            if let elements::Section::Code(ref code_section) = *section {
-                for (idx, _) in code_section.bodies().iter().enumerate() {
-                    let name = all_names
-                        .get(idx as u32 + number_of_imports)
-                        .unwrap()
-                        .as_str();
-                    functions.push(name);
-                }
-            }
-        }
-
-        functions
-    }
-
-    pub fn source_files(&self) -> HashSet<String> {
+    fn files_and_functions(&self) -> (HashSet<String>, HashSet<String>) {
         let resolver = AddressResolver::new(&self.bytes);
-        use parity_wasm::elements;
 
+        let mut functions = HashSet::new();
         let mut files = HashSet::new();
 
-        for section in self.module.sections() {
-            if let elements::Section::Code(ref code_section) = *section {
-                let code_section_offset = code_section.offset();
-                let bodies = code_section.bodies();
+        if let Some(code_section) = self.module.code_section() {
+            let code_section_offset = code_section.offset();
 
-                bodies.iter().enumerate().for_each(|(_, func_body)| {
-                    let instructions = func_body.code().elements();
-                    let offsets = func_body.code().offsets();
+            code_section.bodies().iter().for_each(|func_body| {
+                let offsets = func_body.code().offsets();
 
-                    // let mut mutations: Vec<Mutation> = Vec::new();
+                for offset in offsets.iter() {
+                    let code_offset = *offset - code_section_offset;
 
-                    for (_, offset) in instructions.iter().enumerate().zip(offsets) {
-                        let code_offset = *offset - code_section_offset;
-
-                        let locations = resolver.lookup_address(code_offset).unwrap();
-                        let location = locations.locations.get(0).unwrap();
+                    if let Some(location) = resolver.lookup_address(code_offset) {
+                        if let Some(ref file) = location.function {
+                            functions.insert(file.clone());
+                        }
 
                         if let Some(file) = location.file {
                             files.insert(file.into());
                         }
                     }
-                });
-            }
+                }
+            });
         }
 
-        files
+        (files, functions)
+    }
+
+    pub fn functions(&self) -> HashSet<String> {
+        self.files_and_functions().1
+    }
+
+    pub fn source_files(&self) -> HashSet<String> {
+        self.files_and_functions().0
     }
 }
 
@@ -227,7 +170,7 @@ mod tests {
     #[test]
     fn test_load_from_bytes() -> Result<()> {
         let bytecode = read("testdata/simple_add/test.wasm")?;
-        WasmModule::from_bytes(&bytecode)?;
+        WasmModule::from_bytes(bytecode)?;
         Ok(())
     }
 
@@ -265,8 +208,21 @@ mod tests {
     fn get_functions() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
         let functions = module.functions();
-        assert!(functions.contains(&"_start"));
-        assert!(functions.contains(&"add"));
+        assert!(functions.contains("_start"));
+        assert!(functions.contains("add"));
+        Ok(())
+    }
+
+    #[test]
+    fn get_files() -> Result<()> {
+        let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
+        let files = module.source_files();
+
+        assert_eq!(files.len(), 2);
+        for file in files {
+            assert!(file.ends_with("simple_add.c") || file.ends_with("test.c"));
+        }
+
         Ok(())
     }
 }

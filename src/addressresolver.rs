@@ -1,5 +1,4 @@
-use crate::error::Result;
-use addr2line::{Context, Location};
+use addr2line::Context;
 use gimli::{EndianRcSlice, SectionId};
 use object::{Object, ObjectSection, SymbolMap, SymbolMapName};
 use std::{borrow::Cow, rc::Rc};
@@ -14,11 +13,6 @@ pub struct CodeLocation<'a> {
     pub function: Option<String>,
     pub line: Option<u32>,
     pub column: Option<u32>,
-}
-
-#[derive(Debug, Default, PartialEq)]
-pub struct CodeLocations<'a> {
-    pub locations: Vec<CodeLocation<'a>>,
 }
 
 pub struct AddressResolver<'data> {
@@ -56,15 +50,12 @@ impl<'data> AddressResolver<'data> {
         Self { symbols, context }
     }
 
-    pub fn lookup_address(&self, addr: u64) -> Result<CodeLocations> {
-        let mut printed_anything = false;
-        let mut frames = self.context.find_frames(addr).unwrap();
+    pub fn lookup_address(&self, addr: u64) -> Option<CodeLocation> {
+        let mut frames = self.context.find_frames(addr).ok()?;
 
-        let mut locations: CodeLocations = Default::default();
-
-        while let Some(frame) = frames.next().unwrap() {
+        if let Some(frame) = frames.next().ok()? {
             let function_name = if let Some(func) = frame.function {
-                Some(function_name(&func.raw_name().unwrap(), func.language))
+                Some(function_name(&func.raw_name().ok()?, func.language))
             } else {
                 self.symbols
                     .get(addr)
@@ -72,35 +63,25 @@ impl<'data> AddressResolver<'data> {
                     .map(|name| function_name(name, None))
             };
 
-            let cl = code_location(frame.location);
-
-            printed_anything = true;
-
-            // TODO: Refactor
-            locations.locations.push(CodeLocation {
-                file: cl.0,
+            Some(CodeLocation {
+                file: frame.location.as_ref().and_then(|l| l.file),
                 function: function_name,
-                line: cl.1,
-                column: cl.2,
-            });
-        }
-
-        if !printed_anything {
+                line: frame.location.as_ref().and_then(|l| l.line),
+                column: frame.location.as_ref().and_then(|l| l.column),
+            })
+        } else {
             let func = self
                 .symbols
                 .get(addr)
                 .map(|x| x.name())
                 .map(|name| function_name(name, None));
-
-            locations.locations.push(CodeLocation {
+            Some(CodeLocation {
                 file: None,
                 function: func,
                 line: None,
                 column: None,
-            });
+            })
         }
-
-        Ok(locations)
     }
 }
 
@@ -108,13 +89,13 @@ fn function_name(name: &str, language: Option<gimli::DwLang>) -> String {
     addr2line::demangle_auto(Cow::from(name), language).into()
 }
 
-fn code_location(location: Option<Location>) -> (Option<&str>, Option<u32>, Option<u32>) {
-    if let Some(ref loc) = location {
-        (loc.file, loc.line, loc.column)
-    } else {
-        (None, None, None)
-    }
-}
+// fn code_location(location: Option<Location>) -> (Option<&str>, Option<u32>, Option<u32>) {
+//     if let Some(ref loc) = location {
+//         (loc.file, loc.line, loc.column)
+//     } else {
+//         (None, None, None)
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
@@ -127,23 +108,15 @@ mod tests {
         let bytes = read("testdata/simple_add/test.wasm")?;
         let resolver = AddressResolver::new(&bytes);
 
-        let locations = resolver.lookup_address(100)?;
+        let location = resolver.lookup_address(100).unwrap();
 
-        assert!(locations.locations[0]
+        assert!(location
             .file
             .unwrap()
             .ends_with("testdata/simple_add/test.c"));
-        assert_eq!(locations.locations[0].function, Some("test_add_2".into()));
-        assert_eq!(locations.locations[0].line, Some(16));
-        assert_eq!(locations.locations[0].column, Some(18));
-
-        assert!(locations.locations[1]
-            .file
-            .unwrap()
-            .ends_with("testdata/simple_add/test.c"));
-        assert_eq!(locations.locations[1].function, Some("main".into()));
-        assert_eq!(locations.locations[1].line, Some(21));
-        assert_eq!(locations.locations[1].column, Some(30));
+        assert_eq!(location.function, Some("test_add_2".into()));
+        assert_eq!(location.line, Some(16));
+        assert_eq!(location.column, Some(18));
 
         Ok(())
     }
@@ -153,12 +126,12 @@ mod tests {
         let bytes = read("testdata/simple_add/test.wasm")?;
         let resolver = AddressResolver::new(&bytes);
 
-        let locations = resolver.lookup_address(10)?;
+        let location = resolver.lookup_address(10).unwrap();
 
-        assert_eq!(locations.locations[0].file, None);
-        assert_eq!(locations.locations[0].function, Some("_start".into()));
-        assert_eq!(locations.locations[0].line, None);
-        assert_eq!(locations.locations[0].column, None);
+        assert_eq!(location.file, None);
+        assert_eq!(location.function, Some("_start".into()));
+        assert_eq!(location.line, None);
+        assert_eq!(location.column, None);
 
         Ok(())
     }
