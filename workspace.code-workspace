@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"cSpell.words": [
+			"binop",
+			"relop",
+			"rotr",
+			"signedness",
+			"unop",
+			"wasmut"
+		]
+	}
+}
