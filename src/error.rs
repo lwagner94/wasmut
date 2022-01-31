@@ -47,6 +47,9 @@ pub enum Error {
 
     #[error("unknown error")]
     Unknown(#[source] anyhow::Error),
+
+    #[error("Module does not have a code section")]
+    WasmModuleNoCodeSection,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

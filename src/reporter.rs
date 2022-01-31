@@ -139,7 +139,7 @@ fn map_mutants_to_files<'a, 'r>(
 ) -> FileMutantMap<'r, 'a> {
     let mut file_mapping = BTreeMap::new();
     for (mutation, result) in mutations.iter().zip(results) {
-        let location = resolver.lookup_address(mutation.offset);
+        let location = resolver.lookup_address(mutation.offset as u64);
 
         if let Some(location) = location {
             if let (Some(file), Some(line)) = (location.file, location.line) {

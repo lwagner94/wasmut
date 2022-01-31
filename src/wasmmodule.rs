@@ -1,13 +1,23 @@
 use std::collections::HashSet;
 
+use crate::operator::*;
 use crate::{
     addressresolver::AddressResolver,
     error::{Error, Result},
-    policy::MutationPolicy,
 };
-use parity_wasm::elements::Module;
+use parity_wasm::elements::{Instruction, Module};
+use rayon::prelude::*;
 
-use crate::operator::*;
+pub type CallbackType<'a, R> =
+    &'a (dyn Fn(&Instruction, &InstructionWalkerLocation) -> Vec<R> + Send + Sync);
+
+pub struct InstructionWalkerLocation<'a> {
+    pub file: Option<&'a str>,
+    pub function: Option<&'a str>,
+    pub function_index: u32,
+    pub instruction_index: u32,
+    pub instruction_offset: u32,
+}
 
 #[derive(Clone)]
 pub struct WasmModule {
@@ -29,64 +39,52 @@ impl WasmModule {
         Ok(WasmModule { module, bytes })
     }
 
-    pub fn discover_mutation_positions(&self, mutation_policy: &MutationPolicy) -> Vec<Mutation> {
-        let resolver = AddressResolver::new(&self.bytes);
+    pub fn instruction_walker<R: Send>(&self, callback: CallbackType<R>) -> Result<Vec<R>> {
+        let code_section = self
+            .module
+            .code_section()
+            .ok_or(Error::WasmModuleNoCodeSection)?;
 
-        let mut mutation_positions = Vec::new();
-
-        if let Some(code_section) = self.module.code_section() {
-            let code_section_offset = code_section.offset();
-            code_section
-                .bodies()
-                .iter()
-                .enumerate()
-                .for_each(|(function_number, func_body)| {
+        Ok(code_section
+            .bodies()
+            .par_iter()
+            .enumerate()
+            .map_init(
+                || AddressResolver::new(&self.bytes),
+                |resolver, (func_index, func_body)| {
                     let instructions = func_body.code().elements();
                     let offsets = func_body.code().offsets();
 
-                    for ((statement_number, parity_instr), offset) in
+                    let mut results = Vec::new();
+
+                    for ((instr_index, instruction), offset) in
                         instructions.iter().enumerate().zip(offsets)
                     {
-                        let code_offset = *offset - code_section_offset;
+                        // Relative offset of the instruction, in relation
+                        // to the start of the code section
+                        let code_offset = *offset - code_section.offset();
 
-                        if let Some(instruction) =
-                            MutableInstruction::from_parity_instruction(parity_instr)
-                        {
-                            // TODO: Refactor this, this is really ugly
-                            let location = resolver.lookup_address(code_offset);
+                        let location = resolver.lookup_address(code_offset);
 
-                            if let Some(location) = location {
-                                let mut should_mutate = false;
-                                if let Some(file) = location.file {
-                                    if mutation_policy.check_file(file) {
-                                        should_mutate = true;
-                                    }
-                                }
-
-                                if let Some(function) = &location.function {
-                                    if mutation_policy.check_function(function) {
-                                        should_mutate = true;
-                                    }
-                                }
-                                if should_mutate {
-                                    mutation_positions.extend(
-                                        instruction.generate_mutanted_instructions().iter().map(
-                                            |m| Mutation {
-                                                function_number: function_number as u64,
-                                                statement_number: statement_number as u64,
-                                                offset: code_offset,
-                                                instruction: m.clone(),
-                                            },
-                                        ),
-                                    );
-                                }
-                            }
-                        }
+                        results.extend(callback(
+                            instruction,
+                            &InstructionWalkerLocation {
+                                // We need as_ref here because otherwise
+                                // location is moved into the and_then function
+                                file: location.as_ref().and_then(|l| l.file),
+                                function: location.as_ref().and_then(|l| l.function.as_deref()),
+                                function_index: func_index as u32,
+                                instruction_index: instr_index as u32,
+                                instruction_offset: code_offset as u32,
+                            },
+                        ))
                     }
-                });
-        }
 
-        mutation_positions
+                    results
+                },
+            )
+            .flatten_iter()
+            .collect())
     }
 
     pub fn mutate(&mut self, mutation: &Mutation) {
@@ -178,29 +176,6 @@ mod tests {
     fn test_into_buffer() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
         let _: Vec<u8> = module.try_into()?;
-        Ok(())
-    }
-
-    #[test]
-    fn test_discover_mutation_positions() -> Result<()> {
-        let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        let positions = module.discover_mutation_positions(&MutationPolicy::allow_all());
-
-        assert!(!positions.is_empty());
-        Ok(())
-    }
-
-    #[test]
-    fn test_mutation() -> Result<()> {
-        let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        let positions = module.discover_mutation_positions(&MutationPolicy::allow_all());
-        let mut mutant = module.clone();
-        mutant.mutate(&positions[0]);
-
-        let mutated_bytecode: Vec<u8> = mutant.try_into().unwrap();
-        let original_bytecode: Vec<u8> = module.try_into().unwrap();
-
-        assert_ne!(mutated_bytecode, original_bytecode);
         Ok(())
     }
 

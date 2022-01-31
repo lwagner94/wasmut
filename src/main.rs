@@ -94,6 +94,16 @@ fn mutate(config: &Config) -> Result<()> {
     Ok(())
 }
 
+fn test(config: &Config) -> Result<()> {
+    let module = WasmModule::from_file(&config.module.wasmfile)?;
+    let mutator = MutationEngine::new(config)?;
+    let mutations = mutator.discover_mutation_positions(&module);
+
+    dbg!(mutations.len());
+
+    Ok(())
+}
+
 fn run_main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -135,7 +145,7 @@ fn run_main() -> Result<()> {
         Commands::Lookup { address } => {
             lookup(address, &config)?;
         }
-        Commands::Test => {}
+        Commands::Test => test(&config)?,
     }
 
     Ok(())
