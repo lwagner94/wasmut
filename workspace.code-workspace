@@ -12,6 +12,10 @@
 			"signedness",
 			"unop",
 			"wasmut"
-		]
+		],
+		"rust-analyzer.diagnostics.disabled": [
+			"macro-error",
+			"unresolved-macro-call"
+		  ]
 	}
 }

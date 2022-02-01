@@ -1,3 +1,5 @@
+pub mod new;
+
 use parity_wasm::elements::Instruction as ParityInstruction;
 
 // #[derive(Debug)]
