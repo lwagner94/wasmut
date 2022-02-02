@@ -1,8 +1,9 @@
 use indicatif::{ParallelProgressIterator, ProgressBar};
 
 use crate::error::Error;
+use crate::mutation::Mutation;
 use crate::policy::ExecutionPolicy;
-use crate::{config::Config, error::Result, operator::Mutation, runtime, wasmmodule::WasmModule};
+use crate::{config::Config, error::Result, runtime, wasmmodule::WasmModule};
 use crate::{defaults, runtime::ExecutionResult};
 
 use rayon::prelude::*;

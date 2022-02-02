@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::{
-    addressresolver::AddressResolver, config::Config, error::Result, operator::Mutation,
+    addressresolver::AddressResolver, config::Config, error::Result, mutation::Mutation,
     runtime::ExecutionResult, templates, wasmmodule::WasmModule,
 };
 use handlebars::{to_json, Handlebars};

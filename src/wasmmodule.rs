@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
-use crate::operator::*;
 use crate::{
     addressresolver::AddressResolver,
     error::{Error, Result},
+    mutation::Mutation,
 };
 use parity_wasm::elements::{Instruction, Module};
 use rayon::prelude::*;
@@ -100,7 +100,8 @@ impl WasmModule {
             .get_mut(mutation.statement_number as usize)
             .expect("unexpected instruction index");
 
-        *instruction = mutation.instruction.parity_instruction();
+        // *instruction = mutation.instruction.parity_instruction();
+        mutation.instruction.apply(instruction);
     }
 
     fn files_and_functions(&self) -> (HashSet<String>, HashSet<String>) {

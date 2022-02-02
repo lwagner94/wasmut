@@ -1,7 +1,15 @@
 use crate::error::Result;
-use crate::operator::MutableInstruction;
+use crate::operator::InstructionReplacement;
+use crate::operator::OperatorRegistry;
 use crate::wasmmodule::CallbackType;
-use crate::{config::Config, operator::Mutation, policy::MutationPolicy, wasmmodule::WasmModule};
+use crate::{config::Config, policy::MutationPolicy, wasmmodule::WasmModule};
+
+pub struct Mutation {
+    pub function_number: u32,
+    pub statement_number: u32,
+    pub offset: u32,
+    pub instruction: Box<dyn InstructionReplacement>,
+}
 
 pub struct MutationEngine {
     mutation_policy: MutationPolicy,
@@ -15,36 +23,27 @@ impl MutationEngine {
     }
 
     pub fn discover_mutation_positions(&self, module: &WasmModule) -> Vec<Mutation> {
-        let callback: CallbackType<Mutation> = &|instruction, location| {
-            let mut mutations = Vec::new();
+        let registry = OperatorRegistry::default();
 
-            if let Some(instruction) = MutableInstruction::from_parity_instruction(instruction) {
-                let mut should_mutate = false;
-                if let Some(file) = location.file {
-                    if self.mutation_policy.check_file(file) {
-                        should_mutate = true;
-                    }
-                }
+        let r = &registry;
 
-                if let Some(function) = &location.function {
-                    if self.mutation_policy.check_function(function) {
-                        should_mutate = true;
-                    }
-                }
-                if should_mutate {
-                    mutations.extend(instruction.generate_mutanted_instructions().iter().map(
-                        |m| Mutation {
+        let callback: CallbackType<Mutation> =
+            &|instruction, location| {
+                let mut mutations = Vec::new();
+
+                if self.mutation_policy.check(location.file, location.function) {
+                    mutations.extend(r.from_instruction(instruction).into_iter().map(|op| {
+                        Mutation {
                             function_number: location.function_index,
                             statement_number: location.instruction_index,
                             offset: location.instruction_offset,
-                            instruction: m.clone(),
-                        },
-                    ));
+                            instruction: op,
+                        }
+                    }));
                 }
-            }
 
-            mutations
-        };
+                mutations
+            };
 
         let mutations = module.instruction_walker::<Mutation>(callback).unwrap();
         log::info!("Generated {} mutations", mutations.len());

@@ -93,6 +93,14 @@ impl MutationPolicy {
     pub fn check_file<T: AsRef<str>>(&self, name: T) -> bool {
         self.allowed_files.any(name)
     }
+
+    pub fn check<T: AsRef<str>>(&self, file: Option<T>, func: Option<T>) -> bool {
+        let file_allowed = file.map_or(false, |file| self.check_file(file));
+        let func_allowed = func.map_or(false, |func| self.check_function(func));
+
+        // TODO: Does this make sense?
+        file_allowed || func_allowed
+    }
 }
 
 #[derive(Debug, Clone)]
