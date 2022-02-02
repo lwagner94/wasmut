@@ -5,47 +5,47 @@ pub mod ops;
 
 use ops::*;
 
+use crate::wasmmodule::CallRemovalCandidate;
+
 pub trait InstructionReplacement: Send + Sync {
-    fn new(instr: Instruction) -> Option<Self>
-    where
-        Self: Sized;
     fn old_instruction(&self) -> &Instruction;
     fn new_instruction(&self) -> &Instruction;
 
     fn description(&self) -> String;
-    fn apply(&self, instr_to_be_mutated: &mut Instruction) {
-        assert_eq!(instr_to_be_mutated, self.old_instruction());
 
-        *instr_to_be_mutated = self.new_instruction().clone();
+    fn apply(&self, instructions: &mut Vec<Instruction>, instr_index: u32) {
+        assert_eq!(instructions[instr_index as usize], *self.old_instruction());
+        instructions[instr_index as usize] = self.new_instruction().clone();
     }
 
     fn name() -> &'static str
     where
         Self: Sized + 'static;
+
+    fn factory() -> fn(&Instruction, &InstructionContext) -> Option<Box<dyn InstructionReplacement>>
+    where
+        Self: Sized + Send + Sync + 'static;
 }
 
-pub struct InstructionContext {}
+#[derive(Default)]
+pub struct InstructionContext {
+    call_removal_candidates: Vec<CallRemovalCandidate>,
+}
 
-pub trait ContextAwareOperator: Send + Sync {
-    fn new(instr: Instruction, ctx: InstructionContext) -> Option<Self>
-    where
-        Self: Sized;
-    fn old_instruction(&self) -> &Instruction;
-    fn new_instruction(&self) -> &Instruction;
-
-    fn description(&self) -> String;
-    fn apply(&self, instr_to_be_mutated: &mut Instruction) {
-        assert_eq!(instr_to_be_mutated, self.old_instruction());
-
-        *instr_to_be_mutated = self.new_instruction().clone();
+impl InstructionContext {
+    pub fn new(call_removal_candidates: Vec<CallRemovalCandidate>) -> Self {
+        Self {
+            call_removal_candidates,
+        }
     }
 
-    fn name() -> &'static str
-    where
-        Self: Sized + 'static;
+    fn call_removal_candidates(&self) -> &[CallRemovalCandidate] {
+        &self.call_removal_candidates
+    }
 }
 
-type FactoryFunction = fn(Instruction) -> Option<Box<dyn InstructionReplacement>>;
+type FactoryFunction =
+    fn(&Instruction, &InstructionContext) -> Option<Box<dyn InstructionReplacement>>;
 
 pub struct OperatorRegistry {
     operators: Vec<FactoryFunction>,
@@ -61,62 +61,65 @@ macro_rules! register_operator {
 
 impl OperatorRegistry {
     pub fn new(enabled_ops: &[&str]) -> Self {
-        let mut ops = Vec::new();
+        let mut operators = Vec::new();
 
-        register_operator!(BinaryOperatorSubToAdd, ops, enabled_ops);
-        register_operator!(BinaryOperatorAddToSub, ops, enabled_ops);
+        register_operator!(BinaryOperatorSubToAdd, operators, enabled_ops);
+        register_operator!(BinaryOperatorAddToSub, operators, enabled_ops);
 
-        register_operator!(BinaryOperatorMulToDivS, ops, enabled_ops);
-        register_operator!(BinaryOperatorMulToDivU, ops, enabled_ops);
-        register_operator!(BinaryOperatorDivXToMul, ops, enabled_ops);
+        register_operator!(BinaryOperatorMulToDivS, operators, enabled_ops);
+        register_operator!(BinaryOperatorMulToDivU, operators, enabled_ops);
+        register_operator!(BinaryOperatorDivXToMul, operators, enabled_ops);
 
-        register_operator!(BinaryOperatorShlToShrS, ops, enabled_ops);
-        register_operator!(BinaryOperatorShlToShrU, ops, enabled_ops);
-        register_operator!(BinaryOperatorShrXToShl, ops, enabled_ops);
+        register_operator!(BinaryOperatorShlToShrS, operators, enabled_ops);
+        register_operator!(BinaryOperatorShlToShrU, operators, enabled_ops);
+        register_operator!(BinaryOperatorShrXToShl, operators, enabled_ops);
 
-        register_operator!(BinaryOperatorRemToDiv, ops, enabled_ops);
-        register_operator!(BinaryOperatorDivToRem, ops, enabled_ops);
+        register_operator!(BinaryOperatorRemToDiv, operators, enabled_ops);
+        register_operator!(BinaryOperatorDivToRem, operators, enabled_ops);
 
-        register_operator!(BinaryOperatorAndToOr, ops, enabled_ops);
-        register_operator!(BinaryOperatorOrToAnd, ops, enabled_ops);
+        register_operator!(BinaryOperatorAndToOr, operators, enabled_ops);
+        register_operator!(BinaryOperatorOrToAnd, operators, enabled_ops);
 
-        register_operator!(BinaryOperatorXorToOr, ops, enabled_ops);
-        register_operator!(BinaryOperatorOrToXor, ops, enabled_ops);
+        register_operator!(BinaryOperatorXorToOr, operators, enabled_ops);
+        register_operator!(BinaryOperatorOrToXor, operators, enabled_ops);
 
-        register_operator!(BinaryOperatorRotlToRotr, ops, enabled_ops);
-        register_operator!(BinaryOperatorRotrToRotl, ops, enabled_ops);
+        register_operator!(BinaryOperatorRotlToRotr, operators, enabled_ops);
+        register_operator!(BinaryOperatorRotrToRotl, operators, enabled_ops);
 
-        register_operator!(UnaryOperatorNegToNop, ops, enabled_ops);
+        register_operator!(UnaryOperatorNegToNop, operators, enabled_ops);
 
-        register_operator!(RelationalOperatorEqToNe, ops, enabled_ops);
-        register_operator!(RelationalOperatorNeToEq, ops, enabled_ops);
+        register_operator!(RelationalOperatorEqToNe, operators, enabled_ops);
+        register_operator!(RelationalOperatorNeToEq, operators, enabled_ops);
 
-        register_operator!(RelationalOperatorLeToGt, ops, enabled_ops);
-        register_operator!(RelationalOperatorLeToLt, ops, enabled_ops);
+        register_operator!(RelationalOperatorLeToGt, operators, enabled_ops);
+        register_operator!(RelationalOperatorLeToLt, operators, enabled_ops);
 
-        register_operator!(RelationalOperatorLtToGe, ops, enabled_ops);
-        register_operator!(RelationalOperatorLtToLe, ops, enabled_ops);
+        register_operator!(RelationalOperatorLtToGe, operators, enabled_ops);
+        register_operator!(RelationalOperatorLtToLe, operators, enabled_ops);
 
-        register_operator!(RelationalOperatorGeToGt, ops, enabled_ops);
-        register_operator!(RelationalOperatorGeToLt, ops, enabled_ops);
+        register_operator!(RelationalOperatorGeToGt, operators, enabled_ops);
+        register_operator!(RelationalOperatorGeToLt, operators, enabled_ops);
 
-        register_operator!(RelationalOperatorGtToGe, ops, enabled_ops);
-        register_operator!(RelationalOperatorGtToLe, ops, enabled_ops);
+        register_operator!(RelationalOperatorGtToGe, operators, enabled_ops);
+        register_operator!(RelationalOperatorGtToLe, operators, enabled_ops);
 
-        register_operator!(ConstReplaceZero, ops, enabled_ops);
-        register_operator!(ConstReplaceNonZero, ops, enabled_ops);
+        register_operator!(ConstReplaceZero, operators, enabled_ops);
+        register_operator!(ConstReplaceNonZero, operators, enabled_ops);
+        register_operator!(CallRemoveVoidCall, operators, enabled_ops);
+        register_operator!(CallRemoveScalarCall, operators, enabled_ops);
 
-        Self { operators: ops }
+        Self { operators }
     }
 
     pub fn from_instruction(
         &self,
         instruction: &Instruction,
+        context: &InstructionContext,
     ) -> Vec<Box<dyn InstructionReplacement>> {
         let mut results = Vec::new();
         for op in &self.operators {
             // TODO: Does it make sense to have clone here?
-            if let Some(operator_instance) = op(instruction.clone()) {
+            if let Some(operator_instance) = op(instruction, context) {
                 results.push(operator_instance);
             }
         }
@@ -161,6 +164,8 @@ impl Default for OperatorRegistry {
             RelationalOperatorGtToLe::factory(),
             ConstReplaceZero::factory(),
             ConstReplaceNonZero::factory(),
+            CallRemoveVoidCall::factory(),
+            CallRemoveScalarCall::factory(),
         ];
         Self { operators: ops }
     }
@@ -168,6 +173,8 @@ impl Default for OperatorRegistry {
 
 #[cfg(test)]
 mod tests {
+    use crate::wasmmodule::Datatype;
+
     use super::*;
     use concat_idents::concat_idents;
 
@@ -179,18 +186,23 @@ mod tests {
                 fn test_name() {
                     let enabled_operator = stringify!($operator);
                     let registry = OperatorRegistry::new([enabled_operator].as_slice());
+                    let context = Default::default();
 
-                    let ops = registry.from_instruction(&$original);
+                    let ops = registry.from_instruction(&$original, &context);
                     assert!(ops.len() > 0);
 
                     let mut found = false;
 
                     for op in &ops {
-                        let mut instr = $original;
-                        op.apply(&mut instr);
-                        if instr == $replacement {
+                        let mut instr = vec![$original];
+                        op.apply(&mut instr, 0);
+                        if instr[0] == $replacement {
                             found = true;
                         }
+
+                        let description = op.description();
+                        assert!(description.len() > 0);
+                        // assert!(description.contains(op.name()));
                     }
                     assert!(found);
                 }
@@ -202,7 +214,8 @@ mod tests {
                 fn test_name() {
                     let registry = OperatorRegistry::new([].as_slice());
                     let instr = $original;
-                    let ops = registry.from_instruction(&instr);
+                    let context = Default::default();
+                    let ops = registry.from_instruction(&instr, &context);
                     assert_eq!(ops.len(), 0);
                 }
             });
@@ -217,13 +230,13 @@ mod tests {
                 fn test_name() {
                     let enabled_operator = stringify!($operator);
                     let registry = OperatorRegistry::new([enabled_operator].as_slice());
-
-                    let ops = registry.from_instruction(&$original);
+                    let context = Default::default();
+                    let ops = registry.from_instruction(&$original, &context);
                     assert_eq!(ops.len(), 1);
 
-                    let mut instr = $original;
-                    ops[0].apply(&mut instr);
-                    assert_eq!(instr, $replacement);
+                    let mut instr = vec![$original];
+                    ops[0].apply(&mut instr, 0);
+                    assert_eq!(instr[0], $replacement);
                 }
             });
 
@@ -233,7 +246,8 @@ mod tests {
                 fn test_name() {
                     let registry = OperatorRegistry::new([].as_slice());
                     let instr = $original;
-                    let ops = registry.from_instruction(&instr);
+                    let context = Default::default();
+                    let ops = registry.from_instruction(&instr, &context);
                     assert_eq!(ops.len(), 0);
                 }
             });
@@ -395,4 +409,84 @@ mod tests {
         F64Const(1337f64.to_bits()),
         F64Const(0f64.to_bits())
     );
+
+    #[test]
+    fn call_remove_void_call_enabled() {
+        let registry = OperatorRegistry::new(["call_remove_void_call"].as_slice());
+        let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningVoid {
+            index: 0,
+            params: 2,
+        }]);
+
+        let ops = registry.from_instruction(&Call(0), &context);
+        assert_eq!(ops.len(), 1);
+
+        let mut instructions = vec![I32Const(10), I32Const(12), Call(0), I32Const(13), Call(1)];
+
+        ops[0].apply(&mut instructions, 2);
+
+        let expected = vec![
+            I32Const(10),
+            I32Const(12),
+            Drop,
+            Drop,
+            Nop,
+            I32Const(13),
+            Call(1),
+        ];
+
+        assert_eq!(instructions, expected);
+    }
+
+    #[test]
+    fn call_remove_void_call_disabled() {
+        let registry = OperatorRegistry::new([].as_slice());
+        let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningVoid {
+            index: 0,
+            params: 2,
+        }]);
+        let ops = registry.from_instruction(&Call(0), &context);
+        assert_eq!(ops.len(), 0);
+    }
+
+    #[test]
+    fn call_remove_scalar_call_enabled() {
+        let registry = OperatorRegistry::new(["call_remove_scalar_call"].as_slice());
+        let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningScalar {
+            index: 0,
+            params: 2,
+            return_type: Datatype::I32,
+        }]);
+
+        let ops = registry.from_instruction(&Call(0), &context);
+        assert_eq!(ops.len(), 1);
+
+        let mut instructions = vec![I32Const(10), I32Const(12), Call(0), I32Const(13), Call(1)];
+
+        ops[0].apply(&mut instructions, 2);
+
+        let expected = vec![
+            I32Const(10),
+            I32Const(12),
+            Drop,
+            Drop,
+            I32Const(42),
+            I32Const(13),
+            Call(1),
+        ];
+
+        assert_eq!(instructions, expected);
+    }
+
+    #[test]
+    fn call_remove_scalar_call_disabled() {
+        let registry = OperatorRegistry::new([].as_slice());
+        let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningScalar {
+            index: 0,
+            params: 2,
+            return_type: Datatype::I32,
+        }]);
+        let ops = registry.from_instruction(&Call(0), &context);
+        assert_eq!(ops.len(), 0);
+    }
 }

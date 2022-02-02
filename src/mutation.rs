@@ -1,4 +1,5 @@
 use crate::error::Result;
+use crate::operator::InstructionContext;
 use crate::operator::InstructionReplacement;
 use crate::operator::OperatorRegistry;
 use crate::wasmmodule::CallbackType;
@@ -8,7 +9,7 @@ pub struct Mutation {
     pub function_number: u32,
     pub statement_number: u32,
     pub offset: u32,
-    pub instruction: Box<dyn InstructionReplacement>,
+    pub operator: Box<dyn InstructionReplacement>,
 }
 
 pub struct MutationEngine {
@@ -22,24 +23,28 @@ impl MutationEngine {
         })
     }
 
-    pub fn discover_mutation_positions(&self, module: &WasmModule) -> Vec<Mutation> {
+    pub fn discover_mutation_positions(&self, module: &WasmModule) -> Result<Vec<Mutation>> {
         let registry = OperatorRegistry::default();
 
         let r = &registry;
+
+        let c = module.call_removal_candidates()?;
+
+        let context = InstructionContext::new(c);
 
         let callback: CallbackType<Mutation> =
             &|instruction, location| {
                 let mut mutations = Vec::new();
 
                 if self.mutation_policy.check(location.file, location.function) {
-                    mutations.extend(r.from_instruction(instruction).into_iter().map(|op| {
-                        Mutation {
+                    mutations.extend(r.from_instruction(instruction, &context).into_iter().map(
+                        |op| Mutation {
                             function_number: location.function_index,
                             statement_number: location.instruction_index,
                             offset: location.instruction_offset,
-                            instruction: op,
-                        }
-                    }));
+                            operator: op,
+                        },
+                    ));
                 }
 
                 mutations
@@ -47,7 +52,7 @@ impl MutationEngine {
 
         let mutations = module.instruction_walker::<Mutation>(callback).unwrap();
         log::info!("Generated {} mutations", mutations.len());
-        mutations
+        Ok(mutations)
     }
 }
 
@@ -64,7 +69,7 @@ mod tests {
             mutation_policy: MutationPolicy::allow_all(),
         };
 
-        let positions = engine.discover_mutation_positions(&module);
+        let positions = engine.discover_mutation_positions(&module).unwrap();
 
         assert!(!positions.is_empty());
         Ok(())
@@ -77,7 +82,7 @@ mod tests {
             mutation_policy: MutationPolicy::allow_all(),
         };
 
-        let positions = engine.discover_mutation_positions(&module);
+        let positions = engine.discover_mutation_positions(&module).unwrap();
         let mut mutant = module.clone();
         mutant.mutate(&positions[0]);
 

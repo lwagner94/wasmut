@@ -121,7 +121,7 @@ impl WasmModule {
     }
 
     pub fn mutate(&mut self, mutation: &Mutation) {
-        let instruction = self
+        let instructions = self
             .module
             .code_section_mut()
             .expect("Module does not have a code section")
@@ -129,12 +129,11 @@ impl WasmModule {
             .get_mut(mutation.function_number as usize)
             .expect("unexpected funtion index")
             .code_mut()
-            .elements_mut()
-            .get_mut(mutation.statement_number as usize)
-            .expect("unexpected instruction index");
+            .elements_mut();
 
-        // *instruction = mutation.instruction.parity_instruction();
-        mutation.instruction.apply(instruction);
+        mutation
+            .operator
+            .apply(instructions, mutation.statement_number);
     }
 
     fn files_and_functions(&self) -> (HashSet<String>, HashSet<String>) {

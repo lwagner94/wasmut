@@ -82,7 +82,7 @@ fn lookup(addr: u64, config: &Config) -> Result<()> {
 fn mutate(config: &Config) -> Result<()> {
     let module = WasmModule::from_file(&config.module.wasmfile)?;
     let mutator = MutationEngine::new(config)?;
-    let mutations = mutator.discover_mutation_positions(&module);
+    let mutations = mutator.discover_mutation_positions(&module)?;
 
     let executor = Executor::new(config);
     let outcomes = executor.execute(&module, &mutations)?;
@@ -97,7 +97,7 @@ fn mutate(config: &Config) -> Result<()> {
 fn test(config: &Config) -> Result<()> {
     let module = WasmModule::from_file(&config.module.wasmfile)?;
     let mutator = MutationEngine::new(config)?;
-    let mutations = mutator.discover_mutation_positions(&module);
+    let mutations = mutator.discover_mutation_positions(&module)?;
 
     dbg!(mutations.len());
 

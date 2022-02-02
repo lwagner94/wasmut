@@ -1,45 +1,59 @@
 use parity_wasm::elements::Instruction::{self, *};
 
-use super::InstructionReplacement;
+use crate::wasmmodule::{CallRemovalCandidate, Datatype};
+
+use super::{InstructionContext, InstructionReplacement};
+
+macro_rules! common_functions {
+    () => {
+        fn old_instruction(&self) -> &Instruction {
+            &self.0
+        }
+        fn new_instruction(&self) -> &Instruction {
+            &self.1
+        }
+
+        fn description(&self) -> String {
+            format!(
+                "{}: Replaced {:?} with {:?}",
+                Self::name(),
+                self.old_instruction(),
+                self.new_instruction()
+            )
+        }
+    };
+}
 
 macro_rules! implement_replacement_op {
     ($op_name:ident, $name:expr, $($from:path => $to:path),* $(,)?) => {
+
         pub struct $op_name(Instruction, Instruction);
         impl InstructionReplacement for $op_name {
-            fn new(instr: Instruction) -> Option<Self> {
+            common_functions!();
+
+            fn name() -> &'static str {
+                $name
+            }
+
+
+            fn factory() -> fn(&Instruction, &InstructionContext) -> Option<Box<dyn InstructionReplacement>>
+            where
+                Self: Sized + Send + Sync + 'static,
+            {
+                fn make(instr: &Instruction, _: &InstructionContext) -> Option<Box<dyn InstructionReplacement>> {
+                    $op_name::new(instr).map(|f| Box::new(f) as Box<dyn InstructionReplacement >)
+                }
+                make
+            }
+        }
+
+        impl $op_name {
+            fn new(instr: &Instruction) -> Option<Self> {
                 match instr {
                     $($from => Some(Self($from, $to)),)*
                     _ => None
                 }
             }
-
-            fn old_instruction(&self) -> &Instruction {
-                &self.0
-            }
-            fn new_instruction(&self) -> &Instruction {
-                &self.1
-            }
-
-            fn description(&self) -> String {
-                format!("{}: Replaced {:?} with {:?}", Self::name(), self.old_instruction(), self.new_instruction())
-            }
-
-            fn name() -> &'static str {
-                $name
-            }
-        }
-
-        impl $op_name {
-            pub fn factory() -> fn(Instruction) -> Option<Box<dyn InstructionReplacement>>
-            where
-                Self: Sized + Send + Sync + 'static,
-            {
-                fn make(instr: Instruction) -> Option<Box<dyn InstructionReplacement>> {
-                    $op_name::new(instr).map(|f| Box::new(f) as Box<dyn InstructionReplacement >)
-                }
-                make
-            }
-
         }
     };
 }
@@ -286,8 +300,33 @@ implement_replacement_op! {
 }
 pub struct ConstReplaceZero(Instruction, Instruction);
 impl InstructionReplacement for ConstReplaceZero {
-    fn new(instr: Instruction) -> Option<Self> {
-        match instr {
+    common_functions!();
+
+    fn name() -> &'static str
+    where
+        Self: Sized + 'static,
+    {
+        "const_replace_zero"
+    }
+
+    fn factory() -> fn(&Instruction, &InstructionContext) -> Option<Box<dyn InstructionReplacement>>
+    where
+        Self: Sized + Send + Sync + 'static,
+    {
+        fn make(
+            instr: &Instruction,
+            _: &InstructionContext,
+        ) -> Option<Box<dyn InstructionReplacement>> {
+            ConstReplaceZero::new(instr).map(|f| Box::new(f) as Box<dyn InstructionReplacement>)
+        }
+
+        make
+    }
+}
+
+impl ConstReplaceZero {
+    fn new(instr: &Instruction) -> Option<Self> {
+        match *instr {
             I32Const(i) if i == 0 => Some(Self(I32Const(i), I32Const(42))),
             I64Const(i) if i == 0 => Some(Self(I64Const(i), I64Const(42))),
             F32Const(i) if f32::from_bits(i) == 0.0 => {
@@ -299,48 +338,37 @@ impl InstructionReplacement for ConstReplaceZero {
             _ => None,
         }
     }
+}
 
-    fn old_instruction(&self) -> &Instruction {
-        &self.0
-    }
-    fn new_instruction(&self) -> &Instruction {
-        &self.1
-    }
-
-    fn description(&self) -> String {
-        format!(
-            "{}: Replaced {:?} with {:?}",
-            Self::name(),
-            self.old_instruction(),
-            self.new_instruction()
-        )
-    }
+pub struct ConstReplaceNonZero(Instruction, Instruction);
+impl InstructionReplacement for ConstReplaceNonZero {
+    common_functions!();
 
     fn name() -> &'static str
     where
         Self: Sized + 'static,
     {
-        "const_replace_zero"
+        "const_replace_nonzero"
     }
-}
 
-impl ConstReplaceZero {
-    pub fn factory() -> fn(Instruction) -> Option<Box<dyn InstructionReplacement>>
+    fn factory() -> fn(&Instruction, &InstructionContext) -> Option<Box<dyn InstructionReplacement>>
     where
         Self: Sized + Send + Sync + 'static,
     {
-        fn make(instr: Instruction) -> Option<Box<dyn InstructionReplacement>> {
-            ConstReplaceZero::new(instr).map(|f| Box::new(f) as Box<dyn InstructionReplacement>)
+        fn make(
+            instr: &Instruction,
+            _: &InstructionContext,
+        ) -> Option<Box<dyn InstructionReplacement>> {
+            ConstReplaceNonZero::new(instr).map(|f| Box::new(f) as Box<dyn InstructionReplacement>)
         }
 
         make
     }
 }
 
-pub struct ConstReplaceNonZero(Instruction, Instruction);
-impl InstructionReplacement for ConstReplaceNonZero {
-    fn new(instr: Instruction) -> Option<Self> {
-        match instr {
+impl ConstReplaceNonZero {
+    fn new(instr: &Instruction) -> Option<Self> {
+        match *instr {
             I32Const(i) if i != 0 => Some(Self(I32Const(i), I32Const(0))),
             I64Const(i) if i != 0 => Some(Self(I64Const(i), I64Const(0))),
             F32Const(i) if f32::from_bits(i) != 0.0 => {
@@ -352,40 +380,128 @@ impl InstructionReplacement for ConstReplaceNonZero {
             _ => None,
         }
     }
+}
 
-    fn old_instruction(&self) -> &Instruction {
-        &self.0
-    }
-    fn new_instruction(&self) -> &Instruction {
-        &self.1
-    }
-
-    fn description(&self) -> String {
-        format!(
-            "{}: Replaced {:?} with {:?}",
-            Self::name(),
-            self.old_instruction(),
-            self.new_instruction()
-        )
-    }
+pub struct CallRemoveVoidCall(Instruction, Instruction, usize);
+impl InstructionReplacement for CallRemoveVoidCall {
+    common_functions!();
 
     fn name() -> &'static str
     where
         Self: Sized + 'static,
     {
-        "const_replace_nonzero"
+        "call_remove_void_call"
     }
-}
 
-impl ConstReplaceNonZero {
-    pub fn factory() -> fn(Instruction) -> Option<Box<dyn InstructionReplacement>>
+    fn apply(&self, instructions: &mut Vec<Instruction>, instr_index: u32) {
+        assert_eq!(instructions[instr_index as usize], *self.old_instruction());
+
+        instructions[instr_index as usize] = self.new_instruction().clone();
+
+        for _ in 0..self.2 {
+            instructions.insert(instr_index as usize, Drop)
+        }
+    }
+
+    fn factory() -> fn(&Instruction, &InstructionContext) -> Option<Box<dyn InstructionReplacement>>
     where
         Self: Sized + Send + Sync + 'static,
     {
-        fn make(instr: Instruction) -> Option<Box<dyn InstructionReplacement>> {
-            ConstReplaceNonZero::new(instr).map(|f| Box::new(f) as Box<dyn InstructionReplacement>)
+        fn make(
+            instr: &Instruction,
+            ctx: &InstructionContext,
+        ) -> Option<Box<dyn InstructionReplacement>> {
+            CallRemoveVoidCall::new(instr, ctx)
+                .map(|f| Box::new(f) as Box<dyn InstructionReplacement>)
         }
 
         make
+    }
+}
+
+impl CallRemoveVoidCall {
+    fn new(instr: &Instruction, ctx: &InstructionContext) -> Option<Self> {
+        match *instr {
+            Call(func_ref) => {
+                for candidate in ctx.call_removal_candidates() {
+                    if let CallRemovalCandidate::FuncReturningVoid { index, params } = candidate {
+                        if *index == func_ref {
+                            return Some(Self(instr.clone(), Nop, *params));
+                        }
+                    }
+                }
+
+                None
+            }
+            _ => None,
+        }
+    }
+}
+
+pub struct CallRemoveScalarCall(Instruction, Instruction, usize);
+impl InstructionReplacement for CallRemoveScalarCall {
+    common_functions!();
+
+    fn name() -> &'static str
+    where
+        Self: Sized + 'static,
+    {
+        "call_remove_scalar_call"
+    }
+
+    fn apply(&self, instructions: &mut Vec<Instruction>, instr_index: u32) {
+        assert_eq!(instructions[instr_index as usize], *self.old_instruction());
+
+        instructions[instr_index as usize] = self.new_instruction().clone();
+
+        for _ in 0..self.2 {
+            instructions.insert(instr_index as usize, Drop)
+        }
+    }
+
+    fn factory() -> fn(&Instruction, &InstructionContext) -> Option<Box<dyn InstructionReplacement>>
+    where
+        Self: Sized + Send + Sync + 'static,
+    {
+        fn make(
+            instr: &Instruction,
+            ctx: &InstructionContext,
+        ) -> Option<Box<dyn InstructionReplacement>> {
+            CallRemoveScalarCall::new(instr, ctx)
+                .map(|f| Box::new(f) as Box<dyn InstructionReplacement>)
+        }
+
+        make
+    }
+}
+
+impl CallRemoveScalarCall {
+    fn new(instr: &Instruction, ctx: &InstructionContext) -> Option<Self> {
+        match *instr {
+            Call(func_ref) => {
+                for candidate in ctx.call_removal_candidates() {
+                    if let CallRemovalCandidate::FuncReturningScalar {
+                        index,
+                        params,
+                        return_type,
+                    } = candidate
+                    {
+                        if *index == func_ref {
+                            let replacement = match return_type {
+                                Datatype::I32 => I32Const(42),
+                                Datatype::I64 => I64Const(42),
+                                Datatype::F32 => F32Const(42f32.to_bits()),
+                                Datatype::F64 => F64Const(42f64.to_bits()),
+                            };
+
+                            return Some(Self(instr.clone(), replacement, *params));
+                        }
+                    }
+                }
+
+                None
+            }
+            _ => None,
+        }
     }
 }
