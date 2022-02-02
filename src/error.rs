@@ -48,8 +48,16 @@ pub enum Error {
     #[error("unknown error")]
     Unknown(#[source] anyhow::Error),
 
+    // TODO: Remove
     #[error("Module does not have a code section")]
     WasmModuleNoCodeSection,
+
+    // TODO: Remove
+    #[error("Module does not have a type section")]
+    WasmModuleNoTypeSection,
+
+    #[error("Module is malformed: {0}")]
+    WasmModuleMalformed(&'static str),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

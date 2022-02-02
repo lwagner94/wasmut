@@ -6,7 +6,28 @@ pub mod ops;
 use ops::*;
 
 pub trait InstructionReplacement: Send + Sync {
-    fn new(ty: Instruction) -> Option<Self>
+    fn new(instr: Instruction) -> Option<Self>
+    where
+        Self: Sized;
+    fn old_instruction(&self) -> &Instruction;
+    fn new_instruction(&self) -> &Instruction;
+
+    fn description(&self) -> String;
+    fn apply(&self, instr_to_be_mutated: &mut Instruction) {
+        assert_eq!(instr_to_be_mutated, self.old_instruction());
+
+        *instr_to_be_mutated = self.new_instruction().clone();
+    }
+
+    fn name() -> &'static str
+    where
+        Self: Sized + 'static;
+}
+
+pub struct InstructionContext {}
+
+pub trait ContextAwareOperator: Send + Sync {
+    fn new(instr: Instruction, ctx: InstructionContext) -> Option<Self>
     where
         Self: Sized;
     fn old_instruction(&self) -> &Instruction;

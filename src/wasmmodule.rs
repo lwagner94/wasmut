@@ -5,9 +5,10 @@ use crate::{
     error::{Error, Result},
     mutation::Mutation,
 };
-use parity_wasm::elements::{Instruction, Module};
+use parity_wasm::elements::{External, Instruction, Module, Type, ValueType};
 use rayon::prelude::*;
 
+// TODO: Encapsulate parity_wasm::Instruction in own type?
 pub type CallbackType<'a, R> =
     &'a (dyn Fn(&Instruction, &InstructionWalkerLocation) -> Vec<R> + Send + Sync);
 
@@ -17,6 +18,38 @@ pub struct InstructionWalkerLocation<'a> {
     pub function_index: u32,
     pub instruction_index: u32,
     pub instruction_offset: u32,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Datatype {
+    I32,
+    I64,
+    F32,
+    F64,
+}
+
+impl From<ValueType> for Datatype {
+    fn from(val: ValueType) -> Datatype {
+        match val {
+            ValueType::I32 => Datatype::I32,
+            ValueType::I64 => Datatype::I64,
+            ValueType::F32 => Datatype::F32,
+            ValueType::F64 => Datatype::F64,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum CallRemovalCandidate {
+    /// Function does not return anything and has `params` parameters
+    FuncReturningVoid { index: u32, params: usize },
+
+    /// Function returns scalar and has `params` parameters
+    FuncReturningScalar {
+        index: u32,
+        params: usize,
+        return_type: Datatype,
+    },
 }
 
 #[derive(Clone)]
@@ -142,6 +175,65 @@ impl WasmModule {
     pub fn source_files(&self) -> HashSet<String> {
         self.files_and_functions().0
     }
+
+    pub fn call_removal_candidates(&self) -> Result<Vec<CallRemovalCandidate>> {
+        let type_section = self
+            .module
+            .type_section()
+            .ok_or(Error::WasmModuleMalformed("No type section"))?;
+
+        let mut candidates = Vec::new();
+
+        let check_type = |index: u32, type_ref: usize| {
+            let ty = type_section.types().get(type_ref)?;
+
+            let Type::Function(func_type) = ty;
+
+            let number_of_params = func_type.params().len();
+
+            if func_type.results().is_empty() {
+                Some(CallRemovalCandidate::FuncReturningVoid {
+                    index,
+                    params: number_of_params,
+                })
+            } else if func_type.results().len() == 1 {
+                Some(CallRemovalCandidate::FuncReturningScalar {
+                    index,
+                    params: number_of_params,
+                    return_type: func_type.results()[0].into(),
+                })
+            } else {
+                None
+            }
+        };
+
+        if let Some(import_section) = self.module.import_section() {
+            for (index, import) in import_section.entries().iter().enumerate() {
+                if let External::Function(type_ref) = import.external() {
+                    if let Some(f) = check_type(index as u32, *type_ref as usize) {
+                        candidates.push(f);
+                    }
+                }
+            }
+        }
+
+        if let Some(function_section) = self.module.function_section() {
+            let number_of_imports = self
+                .module
+                .import_section()
+                .map(|f| f.entries().len())
+                .unwrap_or(0);
+
+            for (index, func) in function_section.entries().iter().enumerate() {
+                let index = index + number_of_imports;
+                if let Some(f) = check_type(index as u32, func.type_ref() as usize) {
+                    candidates.push(f);
+                }
+            }
+        }
+
+        Ok(candidates)
+    }
 }
 
 impl TryFrom<WasmModule> for Vec<u8> {
@@ -158,8 +250,6 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use std::fs::read;
-
-    // TODO: See if it makes sense to generalize tests for both runtimes?
 
     #[test]
     fn test_load_from_file() {
@@ -199,6 +289,83 @@ mod tests {
             assert!(file.ends_with("simple_add.c") || file.ends_with("test.c"));
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn scalar_functions() -> Result<()> {
+        use CallRemovalCandidate::*;
+        use Datatype::*;
+
+        let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
+
+        let result = module.call_removal_candidates().unwrap();
+
+        let expected = vec![
+            FuncReturningVoid {
+                index: 0,
+                params: 1,
+            },
+            FuncReturningVoid {
+                index: 1,
+                params: 0,
+            },
+            FuncReturningScalar {
+                index: 2,
+                params: 2,
+                return_type: I32,
+            },
+            FuncReturningScalar {
+                index: 3,
+                params: 0,
+                return_type: I32,
+            },
+            FuncReturningScalar {
+                index: 4,
+                params: 0,
+                return_type: I32,
+            },
+            FuncReturningScalar {
+                index: 5,
+                params: 0,
+                return_type: I32,
+            },
+            FuncReturningVoid {
+                index: 6,
+                params: 1,
+            },
+            FuncReturningVoid {
+                index: 7,
+                params: 1,
+            },
+            FuncReturningVoid {
+                index: 8,
+                params: 0,
+            },
+            FuncReturningVoid {
+                index: 9,
+                params: 0,
+            },
+            FuncReturningVoid {
+                index: 10,
+                params: 1,
+            },
+            FuncReturningVoid {
+                index: 11,
+                params: 0,
+            },
+            FuncReturningScalar {
+                index: 12,
+                params: 0,
+                return_type: I32,
+            },
+            FuncReturningScalar {
+                index: 13,
+                params: 0,
+                return_type: I32,
+            },
+        ];
+        assert_eq!(result, expected);
         Ok(())
     }
 }
