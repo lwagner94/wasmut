@@ -1,3 +1,7 @@
+mod cli;
+
+pub use cli::CLIReporter;
+
 use std::{
     collections::BTreeMap,
     fs::File,
@@ -11,6 +15,7 @@ use crate::{
     config::Config,
     error::Result,
     mutation::Mutation,
+    operator::InstructionReplacement,
     runtime::ExecutionResult,
     templates,
     wasmmodule::WasmModule,
@@ -23,6 +28,7 @@ use syntect::{
     parsing::{SyntaxReference, SyntaxSet},
 };
 
+#[derive(Debug)]
 pub enum MutationOutcome {
     Alive,
     Killed,
@@ -30,11 +36,11 @@ pub enum MutationOutcome {
     Error,
 }
 
-impl From<&ExecutionResult> for MutationOutcome {
-    fn from(result: &ExecutionResult) -> Self {
+impl From<ExecutionResult> for MutationOutcome {
+    fn from(result: ExecutionResult) -> Self {
         match result {
             ExecutionResult::ProcessExit { exit_code, .. } => {
-                if *exit_code == 0 {
+                if exit_code == 0 {
                     MutationOutcome::Alive
                 } else {
                     MutationOutcome::Killed
@@ -46,15 +52,17 @@ impl From<&ExecutionResult> for MutationOutcome {
     }
 }
 
+#[derive(Debug)]
 pub struct ExecutedMutant {
     location: CodeLocation,
     outcome: MutationOutcome,
+    operator: Box<dyn InstructionReplacement>,
 }
 
 pub fn prepare_results(
     module: &WasmModule,
-    mutations: &[Mutation],
-    results: &[ExecutionResult],
+    mutations: Vec<Mutation>,
+    results: Vec<ExecutionResult>,
 ) -> Vec<ExecutedMutant> {
     let resolver = AddressResolver::new(&module.bytes);
 
@@ -63,33 +71,18 @@ pub fn prepare_results(
     }
 
     mutations
-        .iter()
+        .into_iter()
         .zip(results)
         .map(|(mutation, result)| ExecutedMutant {
             location: resolver.lookup_address(mutation.offset).unwrap_or_default(),
             outcome: result.into(),
+            operator: mutation.operator,
         })
         .collect()
 }
 
 pub trait Reporter {
-    fn report(executed_mutants: &[ExecutedMutant]);
-}
-
-pub fn report_results(results: &[ExecutedMutant]) {
-    let r = results
-        .iter()
-        .fold((0, 0, 0, 0), |acc, outcome| match outcome.outcome {
-            MutationOutcome::Alive => (acc.0 + 1, acc.1, acc.2, acc.3),
-            MutationOutcome::Killed => (acc.0, acc.1, acc.2 + 1, acc.3),
-            MutationOutcome::Timeout => (acc.0, acc.1 + 1, acc.2, acc.3),
-            MutationOutcome::Error => (acc.0, acc.1, acc.2, acc.3 + 1),
-        });
-
-    log::info!("Alive: {}", r.0);
-    log::info!("Timeout: {}", r.1);
-    log::info!("Killed: {}", r.2);
-    log::info!("Error: {}", r.3);
+    fn report(&self, executed_mutants: &[ExecutedMutant]) -> Result<()>;
 }
 
 type LineNumberMutantMap<'a> = BTreeMap<u64, Vec<&'a ExecutedMutant>>;
@@ -315,7 +308,7 @@ mod tests {
     #[test]
     fn prepare_results_empty_lists() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        assert_eq!(prepare_results(&module, &[], &[]).len(), 0);
+        assert_eq!(prepare_results(&module, vec![], vec![]).len(), 0);
         Ok(())
     }
 
@@ -323,7 +316,7 @@ mod tests {
     #[should_panic]
     fn prepare_results_length_mismatch() {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm").unwrap();
-        let _ = prepare_results(&module, &[], &[ExecutionResult::Timeout]);
+        let _ = prepare_results(&module, vec![], vec![ExecutionResult::Timeout]);
     }
 
     #[test]
@@ -340,7 +333,9 @@ mod tests {
             )),
         };
 
-        let results = prepare_results(&module, &[mutation], &[ExecutionResult::Timeout]);
+        let results = prepare_results(&module, vec![mutation], vec![ExecutionResult::Timeout]);
+
+        dbg!(&results);
         assert_eq!(results.len(), 1);
 
         assert!(results[0]

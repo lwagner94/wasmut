@@ -91,8 +91,17 @@ fn mutate(config: &Config) -> Result<()> {
 
     // dbg!(outcomes);
 
-    let executed_mutants = reporter::prepare_results(&module, &mutations, &results);
-    reporter::report_results(&executed_mutants);
+    let executed_mutants = reporter::prepare_results(&module, mutations, results);
+    let stdout = std::io::stdout();
+    let mut lock = stdout.lock();
+    let cli_reporter = reporter::CLIReporter::new(&mut lock);
+
+    use reporter::Reporter;
+
+    println!("Here");
+    cli_reporter.report(&executed_mutants)?;
+    println!("Here");
+
     reporter::generate_html(config, &executed_mutants)?;
 
     Ok(())

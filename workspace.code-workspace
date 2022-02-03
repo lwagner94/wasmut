@@ -13,7 +13,7 @@
 			"unop",
 			"wasmut"
 		],
-		"editor.hover.enabled": false,
+		"editor.hover.delay": 600,
 		"rust-analyzer.diagnostics.disabled": [
 			"macro-error",
 			"unresolved-macro-call"
@@ -103,9 +103,9 @@
 		"version": "2.0.0",
 		"tasks": [
 			{
-				"label": "echo",
+				"label": "mutate factorial",
 				"type": "shell",
-				"command": "echo [Info] /home/lukas/Repos/wasmut/testdata/factorial/factorial.c:3:10: Mutant alive",
+				"command": "target/debug/wasmut -c testdata/factorial/wasmut.toml mutate",
 				"problemMatcher": [
 					"$gcc"
 				]

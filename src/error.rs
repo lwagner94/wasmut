@@ -58,6 +58,9 @@ pub enum Error {
 
     #[error("Module is malformed: {0}")]
     WasmModuleMalformed(&'static str),
+
+    #[error("Report generation failed: {0}")]
+    ReportGenerationFailed(&'static str),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
