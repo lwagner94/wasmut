@@ -1,3 +1,4 @@
+use ansi_term::Color;
 use anyhow::Result;
 use clap::{AppSettings, Parser, Subcommand};
 use env_logger::Builder;
@@ -41,12 +42,12 @@ fn list_functions(config: &Config) -> Result<()> {
     let policy = MutationPolicy::from_config(config)?;
 
     for function in module.functions() {
-        if policy.check_function(&function) {
-            colour::dark_green!("allowed: ")
+        let check_result_str = if policy.check_function(&function) {
+            Color::Green.paint("allowed: ")
         } else {
-            colour::dark_red!("denied:  ")
-        }
-        println!("{function}");
+            Color::Red.paint("denied:  ")
+        };
+        println!("{check_result_str}{function}");
     }
 
     Ok(())
@@ -57,12 +58,12 @@ fn list_files(config: &Config) -> Result<()> {
     let policy = MutationPolicy::from_config(config)?;
 
     for file in module.source_files() {
-        if policy.check_file(&file) {
-            colour::dark_green!("allowed: ")
+        let check_result_str = if policy.check_file(&file) {
+            Color::Green.paint("allowed: ")
         } else {
-            colour::dark_red!("denied:  ")
-        }
-        println!("{file}");
+            Color::Red.paint("denied:  ")
+        };
+        println!("{check_result_str}{file}");
     }
 
     Ok(())
@@ -97,10 +98,7 @@ fn mutate(config: &Config) -> Result<()> {
     let cli_reporter = reporter::CLIReporter::new(&mut lock);
 
     use reporter::Reporter;
-
-    println!("Here");
     cli_reporter.report(&executed_mutants)?;
-    println!("Here");
 
     reporter::generate_html(config, &executed_mutants)?;
 
