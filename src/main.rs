@@ -84,12 +84,16 @@ fn mutate(config: &Config) -> Result<()> {
     let mutator = MutationEngine::new(config)?;
     let mutations = mutator.discover_mutation_positions(&module)?;
 
+    // dbg!(&mutations);
+
     let executor = Executor::new(config);
-    let outcomes = executor.execute(&module, &mutations)?;
+    let results = executor.execute(&module, &mutations)?;
 
     // dbg!(outcomes);
-    reporter::report_results(&outcomes);
-    reporter::generate_html(config, &module, &mutations, &outcomes)?;
+
+    let executed_mutants = reporter::prepare_results(&module, &mutations, &results);
+    reporter::report_results(&executed_mutants);
+    reporter::generate_html(config, &executed_mutants)?;
 
     Ok(())
 }

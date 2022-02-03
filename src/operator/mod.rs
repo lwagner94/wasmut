@@ -6,13 +6,13 @@ use parity_wasm::elements::Instruction::{self, *};
 
 use crate::wasmmodule::CallRemovalCandidate;
 
-pub trait InstructionReplacement: Send + Sync {
+pub trait InstructionReplacement: Send + Sync + std::fmt::Debug {
     fn old_instruction(&self) -> &Instruction;
     fn new_instruction(&self) -> &Instruction;
 
     fn description(&self) -> String;
 
-    fn apply(&self, instructions: &mut Vec<Instruction>, instr_index: u32) {
+    fn apply(&self, instructions: &mut Vec<Instruction>, instr_index: u64) {
         assert_eq!(instructions[instr_index as usize], *self.old_instruction());
         instructions[instr_index as usize] = self.new_instruction().clone();
     }

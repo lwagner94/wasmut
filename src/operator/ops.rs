@@ -26,8 +26,8 @@ macro_rules! common_functions {
 
 macro_rules! implement_replacement_op {
     ($op_name:ident, $name:expr, $($from:path => $to:path),* $(,)?) => {
-
-        pub struct $op_name(Instruction, Instruction);
+        #[derive(Debug)]
+        pub struct $op_name(pub Instruction, pub Instruction);
         impl InstructionReplacement for $op_name {
             common_functions!();
 
@@ -298,7 +298,9 @@ implement_replacement_op! {
     F32Gt  => F32Le,
     F64Gt  => F64Le,
 }
-pub struct ConstReplaceZero(Instruction, Instruction);
+
+#[derive(Debug)]
+pub struct ConstReplaceZero(pub Instruction, pub Instruction);
 impl InstructionReplacement for ConstReplaceZero {
     common_functions!();
 
@@ -340,7 +342,8 @@ impl ConstReplaceZero {
     }
 }
 
-pub struct ConstReplaceNonZero(Instruction, Instruction);
+#[derive(Debug)]
+pub struct ConstReplaceNonZero(pub Instruction, pub Instruction);
 impl InstructionReplacement for ConstReplaceNonZero {
     common_functions!();
 
@@ -382,7 +385,8 @@ impl ConstReplaceNonZero {
     }
 }
 
-pub struct CallRemoveVoidCall(Instruction, Instruction, usize);
+#[derive(Debug)]
+pub struct CallRemoveVoidCall(pub Instruction, pub Instruction, pub usize);
 impl InstructionReplacement for CallRemoveVoidCall {
     common_functions!();
 
@@ -393,7 +397,7 @@ impl InstructionReplacement for CallRemoveVoidCall {
         "call_remove_void_call"
     }
 
-    fn apply(&self, instructions: &mut Vec<Instruction>, instr_index: u32) {
+    fn apply(&self, instructions: &mut Vec<Instruction>, instr_index: u64) {
         assert_eq!(instructions[instr_index as usize], *self.old_instruction());
 
         instructions[instr_index as usize] = self.new_instruction().clone();
@@ -438,7 +442,8 @@ impl CallRemoveVoidCall {
     }
 }
 
-pub struct CallRemoveScalarCall(Instruction, Instruction, usize);
+#[derive(Debug)]
+pub struct CallRemoveScalarCall(pub Instruction, pub Instruction, pub usize);
 impl InstructionReplacement for CallRemoveScalarCall {
     common_functions!();
 
@@ -449,7 +454,7 @@ impl InstructionReplacement for CallRemoveScalarCall {
         "call_remove_scalar_call"
     }
 
-    fn apply(&self, instructions: &mut Vec<Instruction>, instr_index: u32) {
+    fn apply(&self, instructions: &mut Vec<Instruction>, instr_index: u64) {
         assert_eq!(instructions[instr_index as usize], *self.old_instruction());
 
         instructions[instr_index as usize] = self.new_instruction().clone();

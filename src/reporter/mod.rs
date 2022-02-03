@@ -7,8 +7,13 @@ use std::{
 };
 
 use crate::{
-    addressresolver::AddressResolver, config::Config, error::Result, mutation::Mutation,
-    runtime::ExecutionResult, templates, wasmmodule::WasmModule,
+    addressresolver::{AddressResolver, CodeLocation},
+    config::Config,
+    error::Result,
+    mutation::Mutation,
+    runtime::ExecutionResult,
+    templates,
+    wasmmodule::WasmModule,
 };
 use handlebars::{to_json, Handlebars};
 use serde::Serialize;
@@ -18,20 +23,67 @@ use syntect::{
     parsing::{SyntaxReference, SyntaxSet},
 };
 
-pub fn report_results(results: &[ExecutionResult]) {
-    let r = results
-        .iter()
-        .fold((0, 0, 0, 0), |acc, outcome| match outcome {
+pub enum MutationOutcome {
+    Alive,
+    Killed,
+    Timeout,
+    Error,
+}
+
+impl From<&ExecutionResult> for MutationOutcome {
+    fn from(result: &ExecutionResult) -> Self {
+        match result {
             ExecutionResult::ProcessExit { exit_code, .. } => {
                 if *exit_code == 0 {
-                    (acc.0 + 1, acc.1, acc.2, acc.3)
+                    MutationOutcome::Alive
                 } else {
-                    (acc.0, acc.1, acc.2 + 1, acc.3)
+                    MutationOutcome::Killed
                 }
             }
+            ExecutionResult::Timeout => MutationOutcome::Timeout,
+            ExecutionResult::Error => MutationOutcome::Error,
+        }
+    }
+}
 
-            ExecutionResult::Timeout => (acc.0, acc.1 + 1, acc.2, acc.3),
-            ExecutionResult::Error => (acc.0, acc.1, acc.2, acc.3 + 1),
+pub struct ExecutedMutant {
+    location: CodeLocation,
+    outcome: MutationOutcome,
+}
+
+pub fn prepare_results(
+    module: &WasmModule,
+    mutations: &[Mutation],
+    results: &[ExecutionResult],
+) -> Vec<ExecutedMutant> {
+    let resolver = AddressResolver::new(&module.bytes);
+
+    if mutations.len() != results.len() {
+        panic!("Mutation/Execution result length mismatch, this is a bug!");
+    }
+
+    mutations
+        .iter()
+        .zip(results)
+        .map(|(mutation, result)| ExecutedMutant {
+            location: resolver.lookup_address(mutation.offset).unwrap_or_default(),
+            outcome: result.into(),
+        })
+        .collect()
+}
+
+pub trait Reporter {
+    fn report(executed_mutants: &[ExecutedMutant]);
+}
+
+pub fn report_results(results: &[ExecutedMutant]) {
+    let r = results
+        .iter()
+        .fold((0, 0, 0, 0), |acc, outcome| match outcome.outcome {
+            MutationOutcome::Alive => (acc.0 + 1, acc.1, acc.2, acc.3),
+            MutationOutcome::Killed => (acc.0, acc.1, acc.2 + 1, acc.3),
+            MutationOutcome::Timeout => (acc.0, acc.1 + 1, acc.2, acc.3),
+            MutationOutcome::Error => (acc.0, acc.1, acc.2, acc.3 + 1),
         });
 
     log::info!("Alive: {}", r.0);
@@ -40,8 +92,8 @@ pub fn report_results(results: &[ExecutionResult]) {
     log::info!("Error: {}", r.3);
 }
 
-type LineNumberMutantMap<'a> = BTreeMap<u32, Vec<(&'a Mutation, &'a ExecutionResult)>>;
-type FileMutantMap<'a, 'b> = BTreeMap<&'a str, LineNumberMutantMap<'b>>;
+type LineNumberMutantMap<'a> = BTreeMap<u64, Vec<&'a ExecutedMutant>>;
+type FileMutantMap<'a> = BTreeMap<String, LineNumberMutantMap<'a>>;
 
 #[derive(Serialize)]
 struct SourceLine {
@@ -55,14 +107,8 @@ struct MutatedFile {
     link: Option<String>,
 }
 
-pub fn generate_html(
-    _config: &Config,
-    module: &WasmModule,
-    mutations: &[Mutation],
-    results: &[ExecutionResult],
-) -> Result<()> {
-    let resolver = AddressResolver::new(&module.bytes);
-    let file_mapping = map_mutants_to_files(mutations, results, &resolver);
+pub fn generate_html(_config: &Config, executed_mutants: &[ExecutedMutant]) -> Result<()> {
+    let file_mapping = map_mutants_to_files(executed_mutants);
 
     let _ = std::fs::remove_dir_all("report");
     std::fs::create_dir("report")?;
@@ -73,15 +119,15 @@ pub fn generate_html(
     let context = SyntectContext::new();
 
     for (file, line_number_map) in file_mapping {
-        let link = match generate_source_lines(file, &line_number_map, &context) {
+        let link = match generate_source_lines(&file, &line_number_map, &context) {
             Ok(lines) => {
                 // TODO: Error handling?
-                let output_file = generate_filename(file);
+                let output_file = generate_filename(&file);
 
                 // TODO: report directory
                 let writer = BufWriter::new(File::create(format!("report/{output_file}"))?);
 
-                let data = BTreeMap::from([("file", to_json(file)), ("lines", to_json(lines))]);
+                let data = BTreeMap::from([("file", to_json(&file)), ("lines", to_json(lines))]);
 
                 // TODO: Refactor error
                 template_engine
@@ -96,10 +142,7 @@ pub fn generate_html(
             }
         };
 
-        mutated_files.push(MutatedFile {
-            name: file.into(),
-            link,
-        });
+        mutated_files.push(MutatedFile { name: file, link });
     }
 
     let data = BTreeMap::from([("source_files", to_json(mutated_files))]);
@@ -132,26 +175,15 @@ fn init_template_engine() -> Handlebars<'static> {
     handlebars
 }
 
-fn map_mutants_to_files<'a, 'r>(
-    mutations: &'a [Mutation],
-    results: &'a [ExecutionResult],
-    resolver: &'r AddressResolver,
-) -> FileMutantMap<'r, 'a> {
+fn map_mutants_to_files(executed_mutants: &[ExecutedMutant]) -> FileMutantMap {
     let mut file_mapping = BTreeMap::new();
-    for (mutation, result) in mutations.iter().zip(results) {
-        let location = resolver.lookup_address(mutation.offset as u64);
-
-        if let Some(location) = location {
-            if let (Some(file), Some(line)) = (location.file, location.line) {
-                let entry = file_mapping.entry(file).or_insert_with(BTreeMap::new);
-                let entry = entry.entry(line).or_insert_with(Vec::new);
-                entry.push((mutation, result));
-            }
-        } else {
-            // This should not really happen, because normally
-            // we already have used the AdressResolver with the given offset
-            // when discovering mutants
-            log::warn!("Lookup for address {} failed", mutation.offset)
+    for mutant in executed_mutants {
+        if let (Some(file), Some(line)) = (&mutant.location.file, mutant.location.line) {
+            let entry = file_mapping
+                .entry(file.clone())
+                .or_insert_with(BTreeMap::new);
+            let entry = entry.entry(line).or_insert_with(Vec::new);
+            entry.push(mutant);
         }
     }
     file_mapping
@@ -226,7 +258,7 @@ fn generate_source_lines(
     let mut lines = Vec::new();
 
     for (line_nr, line) in read_lines(file)?.enumerate() {
-        let line_nr = (line_nr + 1) as u32;
+        let line_nr = (line_nr + 1) as u64;
         let line = line?;
 
         let a = mapping.get(&line_nr).map_or(0, |v| v.len());
@@ -278,5 +310,46 @@ mod tests {
         let s = generate_filename("/home/lukas/Repos/wasmut/testdata/simple_add/simple_add.c");
         assert_eq!(&s, "simple_add.c-fa92c051d002ff3e94998e6acfc1f707.html");
         Ok(())
+    }
+
+    #[test]
+    fn prepare_results_empty_lists() -> Result<()> {
+        let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
+        assert_eq!(prepare_results(&module, &[], &[]).len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    #[should_panic]
+    fn prepare_results_length_mismatch() {
+        let module = WasmModule::from_file("testdata/simple_add/test.wasm").unwrap();
+        let _ = prepare_results(&module, &[], &[ExecutionResult::Timeout]);
+    }
+
+    #[test]
+    fn prepare_results_correct() {
+        let module = WasmModule::from_file("testdata/simple_add/test.wasm").unwrap();
+
+        let mutation = Mutation {
+            function_number: 1,
+            statement_number: 2,
+            offset: 34,
+            operator: Box::new(crate::operator::ops::BinaryOperatorAddToSub(
+                parity_wasm::elements::Instruction::I32Add,
+                parity_wasm::elements::Instruction::I32Sub,
+            )),
+        };
+
+        let results = prepare_results(&module, &[mutation], &[ExecutionResult::Timeout]);
+        assert_eq!(results.len(), 1);
+
+        assert!(results[0]
+            .location
+            .file
+            .as_ref()
+            .unwrap()
+            .contains("testdata/simple_add/simple_add.c"));
+        assert!(*results[0].location.line.as_ref().unwrap() == 3);
+        assert!(*results[0].location.column.as_ref().unwrap() == 14);
     }
 }

@@ -13,9 +13,103 @@
 			"unop",
 			"wasmut"
 		],
+		"editor.hover.enabled": false,
 		"rust-analyzer.diagnostics.disabled": [
 			"macro-error",
 			"unresolved-macro-call"
 		  ]
+	},
+	"launch": {
+		"version": "0.2.0",
+		"configurations": [
+			{
+				"type": "lldb",
+				"request": "launch",
+				"name": "Debug unit tests in library 'wasmut'",
+				"cargo": {
+					"args": [
+						"test",
+						"--no-run",
+						"--lib",
+						"--package=wasmut"
+					],
+					"filter": {
+						"name": "wasmut",
+						"kind": "lib"
+					}
+				},
+				"args": [],
+				"cwd": "${workspaceFolder}"
+			},
+			{
+				"type": "lldb",
+				"request": "launch",
+				"name": "Debug executable 'wasmut'",
+				"cargo": {
+					"args": [
+						"build",
+						"--bin=wasmut",
+						"--package=wasmut"
+					],
+					"filter": {
+						"name": "wasmut",
+						"kind": "bin"
+					}
+				},
+				"args": [],
+				"cwd": "${workspaceFolder}"
+			},
+			{
+				"type": "lldb",
+				"request": "launch",
+				"name": "Debug unit tests in executable 'wasmut'",
+				"cargo": {
+					"args": [
+						"test",
+						"--no-run",
+						"--bin=wasmut",
+						"--package=wasmut"
+					],
+					"filter": {
+						"name": "wasmut",
+						"kind": "bin"
+					}
+				},
+				"args": [],
+				"cwd": "${workspaceFolder}"
+			},
+			{
+				"type": "lldb",
+				"request": "launch",
+				"name": "Debug benchmark 'runtime'",
+				"cargo": {
+					"args": [
+						"test",
+						"--no-run",
+						"--bench=runtime",
+						"--package=wasmut"
+					],
+					"filter": {
+						"name": "runtime",
+						"kind": "bench"
+					}
+				},
+				"args": [],
+				"cwd": "${workspaceFolder}"
+			}
+		]
+	},
+	"tasks": {
+		"version": "2.0.0",
+		"tasks": [
+			{
+				"label": "echo",
+				"type": "shell",
+				"command": "echo [Info] /home/lukas/Repos/wasmut/testdata/factorial/factorial.c:3:10: Mutant alive",
+				"problemMatcher": [
+					"$gcc"
+				]
+			}
+		]
 	}
 }

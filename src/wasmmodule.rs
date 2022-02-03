@@ -15,9 +15,9 @@ pub type CallbackType<'a, R> =
 pub struct InstructionWalkerLocation<'a> {
     pub file: Option<&'a str>,
     pub function: Option<&'a str>,
-    pub function_index: u32,
-    pub instruction_index: u32,
-    pub instruction_offset: u32,
+    pub function_index: u64,
+    pub instruction_index: u64,
+    pub instruction_offset: u64,
 }
 
 #[derive(Debug, PartialEq)]
@@ -104,11 +104,11 @@ impl WasmModule {
                             &InstructionWalkerLocation {
                                 // We need as_ref here because otherwise
                                 // location is moved into the and_then function
-                                file: location.as_ref().and_then(|l| l.file),
+                                file: location.as_ref().and_then(|l| l.file.as_deref()),
                                 function: location.as_ref().and_then(|l| l.function.as_deref()),
-                                function_index: func_index as u32,
-                                instruction_index: instr_index as u32,
-                                instruction_offset: code_offset as u32,
+                                function_index: func_index as u64,
+                                instruction_index: instr_index as u64,
+                                instruction_offset: code_offset,
                             },
                         ))
                     }
@@ -157,7 +157,7 @@ impl WasmModule {
                         }
 
                         if let Some(file) = location.file {
-                            files.insert(file.into());
+                            files.insert(file);
                         }
                     }
                 }

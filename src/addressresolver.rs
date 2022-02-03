@@ -7,12 +7,12 @@ use std::{borrow::Cow, rc::Rc};
 // Licensed under the MIT license, retrived on 2021-12-23
 // Copyright (c) 2016-2018 The gimli Developers
 
-#[derive(Debug, Default, PartialEq)]
-pub struct CodeLocation<'a> {
-    pub file: Option<&'a str>,
+#[derive(Debug, Default, PartialEq, Clone)]
+pub struct CodeLocation {
+    pub file: Option<String>,
     pub function: Option<String>,
-    pub line: Option<u32>,
-    pub column: Option<u32>,
+    pub line: Option<u64>,
+    pub column: Option<u64>,
 }
 
 pub struct AddressResolver<'data> {
@@ -64,10 +64,16 @@ impl<'data> AddressResolver<'data> {
             };
 
             Some(CodeLocation {
-                file: frame.location.as_ref().and_then(|l| l.file),
+                file: frame
+                    .location
+                    .as_ref()
+                    .and_then(|l| l.file.map(String::from)),
                 function: function_name,
-                line: frame.location.as_ref().and_then(|l| l.line),
-                column: frame.location.as_ref().and_then(|l| l.column),
+                line: frame.location.as_ref().and_then(|l| l.line.map(u64::from)),
+                column: frame
+                    .location
+                    .as_ref()
+                    .and_then(|l| l.column.map(u64::from)),
             })
         } else {
             let func = self
