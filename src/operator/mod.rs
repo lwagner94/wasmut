@@ -1,9 +1,8 @@
-#[allow(unused_imports)]
-use parity_wasm::elements::Instruction::{self, *};
-
 pub mod ops;
 
 use ops::*;
+#[allow(unused_imports)]
+use parity_wasm::elements::Instruction::{self, *};
 
 use crate::wasmmodule::CallRemovalCandidate;
 
@@ -118,7 +117,6 @@ impl OperatorRegistry {
     ) -> Vec<Box<dyn InstructionReplacement>> {
         let mut results = Vec::new();
         for op in &self.operators {
-            // TODO: Does it make sense to have clone here?
             if let Some(operator_instance) = op(instruction, context) {
                 results.push(operator_instance);
             }
@@ -126,15 +124,11 @@ impl OperatorRegistry {
 
         results
     }
-
-    pub fn asdf(&self) -> bool {
-        true
-    }
 }
 
 impl Default for OperatorRegistry {
     fn default() -> Self {
-        let ops = vec![
+        let operators = vec![
             BinaryOperatorSubToAdd::factory(),
             BinaryOperatorAddToSub::factory(),
             BinaryOperatorMulToDivS::factory(),
@@ -167,7 +161,7 @@ impl Default for OperatorRegistry {
             CallRemoveVoidCall::factory(),
             CallRemoveScalarCall::factory(),
         ];
-        Self { operators: ops }
+        Self { operators }
     }
 }
 
@@ -202,7 +196,7 @@ mod tests {
 
                         let description = op.description();
                         assert!(description.len() > 0);
-                        // assert!(description.contains(op.name()));
+                        assert!(description.contains(stringify!($operator)));
                     }
                     assert!(found);
                 }
@@ -237,6 +231,9 @@ mod tests {
                     let mut instr = vec![$original];
                     ops[0].apply(&mut instr, 0);
                     assert_eq!(instr[0], $replacement);
+                    let description = ops[0].description();
+                    assert!(description.len() > 0);
+                    assert!(description.contains(stringify!($operator)));
                 }
             });
 
@@ -449,44 +446,60 @@ mod tests {
         assert_eq!(ops.len(), 0);
     }
 
-    #[test]
-    fn call_remove_scalar_call_enabled() {
-        let registry = OperatorRegistry::new(["call_remove_scalar_call"].as_slice());
-        let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningScalar {
-            index: 0,
-            params: 2,
-            return_type: Datatype::I32,
-        }]);
+    macro_rules! generate_remove_scalar_call_test {
+        ($datatype:ident, $replacement:expr) => {
+            concat_idents!(test_name = call_remove_scalar_call_, $datatype, _enabled {
+                #[allow(non_snake_case)]
+                #[test]
 
-        let ops = registry.from_instruction(&Call(0), &context);
-        assert_eq!(ops.len(), 1);
+                fn test_name() {
+                    let registry = OperatorRegistry::new(["call_remove_scalar_call"].as_slice());
+                    let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningScalar {
+                        index: 0,
+                        params: 2,
+                        return_type: Datatype::$datatype,
+                    }]);
 
-        let mut instructions = vec![I32Const(10), I32Const(12), Call(0), I32Const(13), Call(1)];
+                    let ops = registry.from_instruction(&Call(0), &context);
+                    assert_eq!(ops.len(), 1);
 
-        ops[0].apply(&mut instructions, 2);
+                    let mut instructions = vec![I32Const(10), I32Const(12), Call(0), I32Const(13), Call(1)];
 
-        let expected = vec![
-            I32Const(10),
-            I32Const(12),
-            Drop,
-            Drop,
-            I32Const(42),
-            I32Const(13),
-            Call(1),
-        ];
+                    ops[0].apply(&mut instructions, 2);
 
-        assert_eq!(instructions, expected);
-    }
+                    let expected = vec![
+                        I32Const(10),
+                        I32Const(12),
+                        Drop,
+                        Drop,
+                        $replacement,
+                        I32Const(13),
+                        Call(1),
+                    ];
 
-    #[test]
-    fn call_remove_scalar_call_disabled() {
-        let registry = OperatorRegistry::new([].as_slice());
-        let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningScalar {
-            index: 0,
-            params: 2,
-            return_type: Datatype::I32,
-        }]);
-        let ops = registry.from_instruction(&Call(0), &context);
-        assert_eq!(ops.len(), 0);
-    }
+                    assert_eq!(instructions, expected);
+                }
+            });
+
+            concat_idents!(test_name = call_remove_scalar_call_, $datatype, _disabled {
+                #[allow(non_snake_case)]
+                #[test]
+                fn test_name() {
+                    let registry = OperatorRegistry::new([].as_slice());
+                    let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningScalar {
+                        index: 0,
+                        params: 2,
+                        return_type: Datatype::$datatype,
+                    }]);
+                    let ops = registry.from_instruction(&Call(0), &context);
+                    assert_eq!(ops.len(), 0);
+                }
+            });
+        };
+     }
+
+    generate_remove_scalar_call_test!(I32, I32Const(42));
+    generate_remove_scalar_call_test!(I64, I64Const(42));
+    generate_remove_scalar_call_test!(F32, F32Const(42f32.to_bits()));
+    generate_remove_scalar_call_test!(F64, F64Const(42f64.to_bits()));
 }
