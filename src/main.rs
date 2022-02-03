@@ -95,7 +95,7 @@ fn mutate(config: &Config) -> Result<()> {
     let executed_mutants = reporter::prepare_results(&module, mutations, results);
     let stdout = std::io::stdout();
     let mut lock = stdout.lock();
-    let cli_reporter = reporter::CLIReporter::new(&mut lock);
+    let cli_reporter = reporter::CLIReporter::new(&config.report, &mut lock)?;
 
     use reporter::Reporter;
     cli_reporter.report(&executed_mutants)?;

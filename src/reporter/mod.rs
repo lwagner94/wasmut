@@ -1,4 +1,5 @@
 mod cli;
+mod rewriter;
 
 pub use cli::CLIReporter;
 

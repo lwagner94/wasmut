@@ -1,17 +1,28 @@
 use std::{cell::RefCell, io::Write};
 
-use super::{ExecutedMutant, MutationOutcome, Reporter};
-use crate::error::{Error, Result};
+use super::{rewriter::PathRewriter, ExecutedMutant, MutationOutcome, Reporter};
+use crate::{
+    config::ReportConfig,
+    error::{Error, Result},
+};
 
 pub struct CLIReporter<'a> {
     writer: RefCell<&'a mut dyn Write>,
+    path_rewriter: Option<PathRewriter>,
 }
 
 impl<'a> CLIReporter<'a> {
-    pub fn new<W: Write>(writer: &'a mut W) -> Self {
-        CLIReporter {
+    pub fn new<W: Write>(config: &ReportConfig, writer: &'a mut W) -> Result<Self> {
+        let path_rewriter = if let Some((regex, replacement)) = &config.path_rewrite {
+            Some(PathRewriter::new(regex, replacement)?)
+        } else {
+            None
+        };
+
+        Ok(CLIReporter {
             writer: RefCell::new(writer),
-        }
+            path_rewriter,
+        })
     }
 
     fn summary(&self, executed_mutants: &[ExecutedMutant]) {
@@ -66,7 +77,13 @@ impl<'a> CLIReporter<'a> {
             if let Some(line_nr) = mutant.location.line {
                 file_line_col += &format!(":{line_nr}");
 
-                match Self::get_line_from_file(file, line_nr) {
+                let file = if let Some(path_rewriter) = &self.path_rewriter {
+                    path_rewriter.rewrite(file)
+                } else {
+                    file.into()
+                };
+
+                match Self::get_line_from_file(&file, line_nr) {
                     Ok(line) => {
                         line_in_file = line;
                     }
@@ -141,7 +158,12 @@ mod tests {
     fn report_to_string(executed_mutants: Vec<ExecutedMutant>) -> String {
         let buffer = Vec::new();
         let mut cursor = std::io::Cursor::new(buffer);
-        let reporter = CLIReporter::new(&mut cursor);
+
+        let config = ReportConfig {
+            path_rewrite: Some(("/home/lukas/Repos/wasmut/".into(), "".into())),
+        };
+
+        let reporter = CLIReporter::new(&config, &mut cursor).unwrap();
         reporter.report(&executed_mutants).unwrap();
         let mut output = String::new();
         cursor.seek(std::io::SeekFrom::Start(0)).unwrap();

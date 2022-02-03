@@ -23,12 +23,19 @@ pub struct EngineConfig {
     pub timeout_multiplier: Option<f64>,
 }
 
+#[derive(Debug, Deserialize, Clone, Default)]
+#[allow(unused)]
+pub struct ReportConfig {
+    pub path_rewrite: Option<(String, String)>,
+}
+
 #[derive(Debug, Deserialize, Default, Clone)]
 #[allow(unused)]
 pub struct Config {
     pub module: ModuleConfig,
     pub engine: EngineConfig,
     pub filter: MutationFilterConfig,
+    pub report: ReportConfig,
 }
 
 impl Config {
@@ -149,6 +156,20 @@ mod tests {
         let s = std::fs::read_to_string("testdata/simple_add/wasmut.toml")?;
         let config = Config::parse_str(&s)?;
         assert_eq!(config.module.wasmfile, "./test.wasm".to_owned());
+        Ok(())
+    }
+
+    #[test]
+    fn report_config() -> Result<()> {
+        let module: ReportConfig = toml::from_str(
+            r#"
+        path_rewrite = ["foo", "bar"]
+    "#,
+        )?;
+        assert_eq!(
+            module.path_rewrite,
+            Some((String::from("foo"), String::from("bar")))
+        );
         Ok(())
     }
 }
