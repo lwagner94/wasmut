@@ -30,7 +30,7 @@ use syntect::{
     parsing::{SyntaxReference, SyntaxSet},
 };
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum MutationOutcome {
     Alive,
     Killed,

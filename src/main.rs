@@ -1,6 +1,6 @@
-use ansi_term::Color;
 use anyhow::Result;
 use clap::{AppSettings, Parser, Subcommand};
+use colored::*;
 use env_logger::Builder;
 use log::*;
 use std::path::Path;
@@ -43,9 +43,9 @@ fn list_functions(config: &Config) -> Result<()> {
 
     for function in module.functions() {
         let check_result_str = if policy.check_function(&function) {
-            Color::Green.paint("allowed: ")
+            "allowed: ".green()
         } else {
-            Color::Red.paint("denied:  ")
+            "denied:  ".red()
         };
         println!("{check_result_str}{function}");
     }
@@ -59,9 +59,9 @@ fn list_files(config: &Config) -> Result<()> {
 
     for file in module.source_files() {
         let check_result_str = if policy.check_file(&file) {
-            Color::Green.paint("allowed: ")
+            "allowed: ".green()
         } else {
-            Color::Red.paint("denied:  ")
+            "denied:  ".red()
         };
         println!("{check_result_str}{file}");
     }

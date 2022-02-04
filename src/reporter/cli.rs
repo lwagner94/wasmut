@@ -1,4 +1,4 @@
-use ansi_term::Color;
+use colored::*;
 use std::{cell::RefCell, io::Write};
 
 use super::{
@@ -16,16 +16,14 @@ pub struct CLIReporter<'a> {
     highlighter_context: SyntectContext,
 }
 
-impl std::fmt::Display for MutationOutcome {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            MutationOutcome::Alive => Color::Red.paint("ALIVE"),
-            MutationOutcome::Killed => Color::Green.paint("KILLED"),
-            MutationOutcome::Timeout => Color::Yellow.paint("TIMEOUT"),
-            MutationOutcome::Error => Color::Yellow.paint("ERROR"),
-        };
-
-        write!(f, "{s}")
+impl From<MutationOutcome> for ColoredString {
+    fn from(m: MutationOutcome) -> Self {
+        match m {
+            MutationOutcome::Alive => "ALIVE".red(),
+            MutationOutcome::Killed => "KILLED".green(),
+            MutationOutcome::Timeout => "TIMEOUT".yellow(),
+            MutationOutcome::Error => "ERROR".yellow(),
+        }
     }
 }
 
@@ -56,23 +54,20 @@ impl<'a> CLIReporter<'a> {
         );
         let mut writer = self.writer.borrow_mut();
 
-        let alive_str = format!("{}:", MutationOutcome::Alive);
-        let timeout_str = format!("{}:", MutationOutcome::Timeout);
-        let error_str = format!("{}:", MutationOutcome::Error);
-        let killed_str = format!("{}:", MutationOutcome::Killed);
-
-        writeln!(writer).unwrap();
-        writeln!(writer, "{:>30} {}", alive_str, alive).unwrap();
-        writeln!(writer, "{:>30} {}", timeout_str, timeout).unwrap();
-        writeln!(writer, "{:>30} {}", error_str, error).unwrap();
-        writeln!(writer, "{:>30} {}", killed_str, killed).unwrap();
+        let alive_str: ColoredString = MutationOutcome::Alive.into();
+        let timeout_str: ColoredString = MutationOutcome::Timeout.into();
+        let error_str: ColoredString = MutationOutcome::Error.into();
+        let killed_str: ColoredString = MutationOutcome::Killed.into();
 
         let mutation_score =
             100f32 * (timeout + killed + error) as f32 / (alive + timeout + killed + error) as f32;
 
-        let f = format!("{}:", Color::White.paint("Mutation score"));
-
-        writeln!(writer, "{:>30} {}%", f, mutation_score).unwrap();
+        writeln!(writer).unwrap();
+        writeln!(writer, "{0:15} {1}", alive_str, alive).unwrap();
+        writeln!(writer, "{0:15} {1}", timeout_str, timeout).unwrap();
+        writeln!(writer, "{0:15} {1}", error_str, error).unwrap();
+        writeln!(writer, "{0:15} {1}", killed_str, killed).unwrap();
+        writeln!(writer, "{0:15} {1}%", "Mutation score", mutation_score).unwrap();
     }
 
     fn enumerate_mutants(&self, executed_mutants: &[ExecutedMutant]) -> Result<()> {
@@ -117,7 +112,11 @@ impl<'a> CLIReporter<'a> {
 
                 match Self::get_line_from_file(&file, line_nr) {
                     Ok(line) => {
-                        line_in_file = highlighter.terminal_string(&line);
+                        line_in_file = if control::ShouldColorize::from_env().should_colorize() {
+                            highlighter.terminal_string(&line)
+                        } else {
+                            line
+                        };
                     }
                     Err(e) => {
                         log::warn!("Could not read from file: {:?}", e);
@@ -133,7 +132,7 @@ impl<'a> CLIReporter<'a> {
         }
 
         let description = mutant.operator.description();
-        let outcome = &mutant.outcome;
+        let outcome: ColoredString = mutant.outcome.clone().into();
 
         // let status = color.paint(format!("{:?}", mutant.outcome));
 
