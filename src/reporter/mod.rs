@@ -24,12 +24,13 @@ use crate::{
 use handlebars::{to_json, Handlebars};
 use serde::Serialize;
 use syntect::{
+    easy::HighlightLines,
     highlighting::Theme,
     html::highlighted_html_for_string,
     parsing::{SyntaxReference, SyntaxSet},
 };
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum MutationOutcome {
     Alive,
     Killed,
@@ -110,7 +111,7 @@ pub fn generate_html(_config: &Config, executed_mutants: &[ExecutedMutant]) -> R
     let template_engine = init_template_engine();
 
     let mut mutated_files = Vec::new();
-    let context = SyntectContext::new();
+    let context = SyntectContext::new("InspiredGitHub");
 
     for (file, line_number_map) in file_mapping {
         let link = match generate_source_lines(&file, &line_number_map, &context) {
@@ -197,9 +198,9 @@ struct SyntectContext {
 }
 
 impl SyntectContext {
-    fn new() -> Self {
+    fn new(theme_name: &str) -> Self {
         let ts = syntect::highlighting::ThemeSet::load_defaults();
-        let theme = ts.themes["InspiredGitHub"].clone();
+        let theme = ts.themes[theme_name].clone();
 
         let syntax_set = syntect::parsing::SyntaxSet::load_defaults_nonewlines();
 
@@ -226,6 +227,12 @@ impl SyntectContext {
     }
 }
 
+impl Default for SyntectContext {
+    fn default() -> Self {
+        Self::new("InspiredGitHub")
+    }
+}
+
 struct SyntectFileContext<'a> {
     context: &'a SyntectContext,
     syntax: &'a SyntaxReference,
@@ -239,6 +246,12 @@ impl<'a> SyntectFileContext<'a> {
             self.syntax,
             &self.context.theme,
         )
+    }
+
+    fn terminal_string(&self, line: &str) -> String {
+        let mut highlight = HighlightLines::new(self.syntax, &self.context.theme);
+        let regions = highlight.highlight(line, &self.context.syntax_set);
+        syntect::util::as_24_bit_terminal_escaped(&regions[..], false)
     }
 }
 
@@ -271,7 +284,7 @@ mod tests {
 
     #[test]
     fn generate_source_lines_no_mutants() -> Result<()> {
-        let ctx = SyntectContext::new();
+        let ctx = SyntectContext::default();
         let result =
             generate_source_lines("testdata/simple_add/simple_add.c", &BTreeMap::new(), &ctx)?;
         assert_eq!(result.len(), 4);
@@ -280,21 +293,21 @@ mod tests {
 
     #[test]
     fn generate_source_lines_invalid_file() -> Result<()> {
-        let ctx = SyntectContext::new();
+        let ctx = SyntectContext::default();
         assert!(generate_source_lines("testdata/invalid_file.c", &BTreeMap::new(), &ctx).is_err());
         Ok(())
     }
 
     #[test]
     fn unknown_extension() -> Result<()> {
-        let ctx = SyntectContext::new();
+        let ctx = SyntectContext::default();
         assert_eq!(&ctx.file_context("test.abc").syntax.name, "Plain Text");
         Ok(())
     }
 
     #[test]
     fn no_extension() -> Result<()> {
-        let ctx = SyntectContext::new();
+        let ctx = SyntectContext::default();
         assert_eq!(&ctx.file_context("test").syntax.name, "Plain Text");
         Ok(())
     }
