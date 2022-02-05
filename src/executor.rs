@@ -80,30 +80,47 @@ mod tests {
 
     use super::*;
 
-    fn execute_module(test_case: &str) -> Result<Vec<ExecutionResult>> {
+    fn execute_module(test_case: &str, mutations: &[Mutation]) -> Result<Vec<ExecutionResult>> {
         let module = WasmModule::from_file(&format!("testdata/{test_case}/test.wasm"))?;
         let executor = Executor::new(&Config::default());
-        executor.execute(&module, &[])
+        executor.execute(&module, mutations)
     }
 
     #[test]
     fn original_module_nonzero_exit() -> Result<()> {
-        let result = execute_module("nonzero_exit");
+        let result = execute_module("nonzero_exit", &[]);
         assert!(matches!(result, Err(Error::WasmModuleNonzeroExit(1))));
         Ok(())
     }
 
     #[test]
     fn original_module_rust_fail() -> Result<()> {
-        let result = execute_module("rust_fail");
+        let result = execute_module("rust_fail", &[]);
         assert!(matches!(result, Err(Error::WasmModuleFailed)));
         Ok(())
     }
 
     #[test]
     fn no_mutants() -> Result<()> {
-        let result = execute_module("simple_add");
+        let result = execute_module("simple_add", &[]);
         assert!(matches!(result, Ok(..)));
+        Ok(())
+    }
+
+    #[test]
+    fn execute_mutant() -> Result<()> {
+        let mutations = vec![Mutation {
+            function_number: 1,
+            statement_number: 2,
+            offset: 34,
+            operator: Box::new(crate::operator::ops::BinaryOperatorAddToSub(
+                parity_wasm::elements::Instruction::I32Add,
+                parity_wasm::elements::Instruction::I32Sub,
+            )),
+        }];
+
+        let result = execute_module("nonzero_exit", &mutations);
+        assert!(matches!(result, Err(Error::WasmModuleNonzeroExit(1))));
         Ok(())
     }
 }

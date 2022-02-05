@@ -337,20 +337,64 @@ mod tests {
     fn prepare_results_correct() {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm").unwrap();
 
-        let mutation = Mutation {
-            function_number: 1,
-            statement_number: 2,
-            offset: 34,
-            operator: Box::new(crate::operator::ops::BinaryOperatorAddToSub(
-                parity_wasm::elements::Instruction::I32Add,
-                parity_wasm::elements::Instruction::I32Sub,
-            )),
-        };
+        // Not nice, but needed since our operator implemention does not
+        // support clone()
+        let mutation = vec![
+            Mutation {
+                function_number: 1,
+                statement_number: 2,
+                offset: 34,
+                operator: Box::new(crate::operator::ops::BinaryOperatorAddToSub(
+                    parity_wasm::elements::Instruction::I32Add,
+                    parity_wasm::elements::Instruction::I32Sub,
+                )),
+            },
+            Mutation {
+                function_number: 1,
+                statement_number: 2,
+                offset: 34,
+                operator: Box::new(crate::operator::ops::BinaryOperatorAddToSub(
+                    parity_wasm::elements::Instruction::I32Add,
+                    parity_wasm::elements::Instruction::I32Sub,
+                )),
+            },
+            Mutation {
+                function_number: 1,
+                statement_number: 2,
+                offset: 34,
+                operator: Box::new(crate::operator::ops::BinaryOperatorAddToSub(
+                    parity_wasm::elements::Instruction::I32Add,
+                    parity_wasm::elements::Instruction::I32Sub,
+                )),
+            },
+            Mutation {
+                function_number: 1,
+                statement_number: 2,
+                offset: 34,
+                operator: Box::new(crate::operator::ops::BinaryOperatorAddToSub(
+                    parity_wasm::elements::Instruction::I32Add,
+                    parity_wasm::elements::Instruction::I32Sub,
+                )),
+            },
+        ];
 
-        let results = prepare_results(&module, vec![mutation], vec![ExecutionResult::Timeout]);
+        let execution_results = vec![
+            ExecutionResult::Timeout,
+            ExecutionResult::ProcessExit {
+                exit_code: 0,
+                execution_cost: 1,
+            },
+            ExecutionResult::ProcessExit {
+                exit_code: 1,
+                execution_cost: 1,
+            },
+            ExecutionResult::Error,
+        ];
+
+        let results = prepare_results(&module, mutation, execution_results);
 
         dbg!(&results);
-        assert_eq!(results.len(), 1);
+        assert_eq!(results.len(), 4);
 
         assert!(results[0]
             .location
@@ -360,5 +404,10 @@ mod tests {
             .contains("testdata/simple_add/simple_add.c"));
         assert!(*results[0].location.line.as_ref().unwrap() == 3);
         assert!(*results[0].location.column.as_ref().unwrap() == 14);
+
+        assert!(results[0].outcome == MutationOutcome::Timeout);
+        assert!(results[1].outcome == MutationOutcome::Alive);
+        assert!(results[2].outcome == MutationOutcome::Killed);
+        assert!(results[3].outcome == MutationOutcome::Error);
     }
 }

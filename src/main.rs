@@ -104,7 +104,7 @@ fn mutate(wasmfile: &str, config: &Config) -> Result<()> {
     let mutator = MutationEngine::new(config)?;
     let mutations = mutator.discover_mutation_positions(&module)?;
 
-    // dbg!(&mutations);
+    dbg!(&mutations);
 
     let executor = Executor::new(config);
     let results = executor.execute(&module, &mutations)?;
