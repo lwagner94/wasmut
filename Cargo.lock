@@ -2238,6 +2238,7 @@ dependencies = [
  "regex",
  "serde",
  "syntect",
+ "tempfile",
  "thiserror",
  "toml",
  "wasmer",

@@ -29,7 +29,7 @@ impl From<MutationOutcome> for ColoredString {
 
 impl<'a> CLIReporter<'a> {
     pub fn new<W: Write>(config: &ReportConfig, writer: &'a mut W) -> Result<Self> {
-        let path_rewriter = if let Some((regex, replacement)) = &config.path_rewrite {
+        let path_rewriter = if let Some((regex, replacement)) = &config.path_rewrite() {
             Some(PathRewriter::new(regex, replacement)?)
         } else {
             None
@@ -171,7 +171,9 @@ impl<'a> Reporter for CLIReporter<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{addressresolver::CodeLocation, operator::ops::BinaryOperatorAddToSub};
+    use crate::{
+        addressresolver::CodeLocation, config::Config, operator::ops::BinaryOperatorAddToSub,
+    };
     use parity_wasm::elements::Instruction;
     use std::io::{Read, Seek};
 
@@ -194,11 +196,15 @@ mod tests {
         let buffer = Vec::new();
         let mut cursor = std::io::Cursor::new(buffer);
 
-        let config = ReportConfig {
-            path_rewrite: Some(("/home/lukas/Repos/wasmut/".into(), "".into())),
-        };
+        let config = Config::parse_str(
+            r#"
+            [report]
+            path_rewrite = ["/home/lukas/Repos/wasmut/", ""]
+        "#,
+        )
+        .unwrap();
 
-        let reporter = CLIReporter::new(&config, &mut cursor).unwrap();
+        let reporter = CLIReporter::new(config.report(), &mut cursor).unwrap();
         reporter.report(&executed_mutants).unwrap();
         let mut output = String::new();
         cursor.seek(std::io::SeekFrom::Start(0)).unwrap();

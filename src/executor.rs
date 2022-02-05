@@ -3,8 +3,8 @@ use indicatif::{ParallelProgressIterator, ProgressBar};
 use crate::error::Error;
 use crate::mutation::Mutation;
 use crate::policy::ExecutionPolicy;
+use crate::runtime::ExecutionResult;
 use crate::{config::Config, error::Result, runtime, wasmmodule::WasmModule};
-use crate::{defaults, runtime::ExecutionResult};
 
 use rayon::prelude::*;
 
@@ -15,10 +15,7 @@ pub struct Executor {
 impl Executor {
     pub fn new(config: &Config) -> Self {
         Executor {
-            timeout_multiplier: config
-                .engine
-                .timeout_multiplier
-                .unwrap_or(defaults::TIMEOUT_MULTIPLIER),
+            timeout_multiplier: config.engine().timeout_multiplier(),
         }
     }
 

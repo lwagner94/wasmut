@@ -66,10 +66,8 @@ mod tests {
     fn test_discover_mutation_positions() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
 
-        let engine = MutationEngine {
-            mutation_policy: MutationPolicy::allow_all(),
-        };
-
+        let config = Config::default();
+        let engine = MutationEngine::new(&config)?;
         let positions = engine.discover_mutation_positions(&module).unwrap();
 
         assert!(!positions.is_empty());
@@ -79,9 +77,8 @@ mod tests {
     #[test]
     fn test_mutation() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        let engine = MutationEngine {
-            mutation_policy: MutationPolicy::allow_all(),
-        };
+        let config = Config::default();
+        let engine = MutationEngine::new(&config)?;
 
         let positions = engine.discover_mutation_positions(&module).unwrap();
         let mut mutant = module.clone();

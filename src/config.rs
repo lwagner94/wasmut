@@ -1,46 +1,82 @@
 use std::path::Path;
 
-use crate::error::{Error, Result};
+use crate::{
+    defaults::TIMEOUT_MULTIPLIER,
+    error::{Error, Result},
+    templates,
+};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Default, Clone)]
-#[allow(unused)]
-pub struct ModuleConfig {
-    pub wasmfile: String,
+pub struct FilterConfig {
+    allowed_files: Option<Vec<String>>,
+    allowed_functions: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize, Default, Clone)]
-#[allow(unused)]
-pub struct MutationFilterConfig {
-    pub allowed_files: Option<Vec<String>>,
-    pub allowed_functions: Option<Vec<String>>,
+impl FilterConfig {
+    pub fn allowed_files(&self) -> Option<&Vec<String>> {
+        self.allowed_files.as_ref()
+    }
+
+    pub fn allowed_functions(&self) -> Option<&Vec<String>> {
+        self.allowed_functions.as_ref()
+    }
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
-#[allow(unused)]
 pub struct EngineConfig {
-    pub threads: Option<u64>,
-    pub timeout_multiplier: Option<f64>,
+    threads: Option<usize>,
+    timeout_multiplier: Option<f64>,
+}
+
+impl EngineConfig {
+    pub fn threads(&self) -> usize {
+        self.threads.unwrap_or_else(num_cpus::get)
+    }
+
+    pub fn timeout_multiplier(&self) -> f64 {
+        self.timeout_multiplier.unwrap_or(TIMEOUT_MULTIPLIER)
+    }
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
-#[allow(unused)]
 pub struct ReportConfig {
-    pub path_rewrite: Option<(String, String)>,
+    path_rewrite: Option<(String, String)>,
 }
 
-#[derive(Debug, Deserialize, Default, Clone)]
-#[allow(unused)]
+impl ReportConfig {
+    pub fn path_rewrite(&self) -> Option<(&str, &str)> {
+        self.path_rewrite
+            .as_ref()
+            .map(|(regex, replacement)| (regex.as_ref(), replacement.as_ref()))
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct Config {
-    pub module: ModuleConfig,
-    pub engine: EngineConfig,
-    pub filter: MutationFilterConfig,
-    pub report: ReportConfig,
+    engine: Option<EngineConfig>,
+    filter: Option<FilterConfig>,
+    report: Option<ReportConfig>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            engine: Some(Default::default()),
+            filter: Some(Default::default()),
+            report: Some(Default::default()),
+        }
+    }
 }
 
 impl Config {
     pub fn parse_str(s: &str) -> Result<Self> {
-        Self::parse(s, Path::new("."))
+        Self::parse(s)
+    }
+
+    pub fn save_default_config<P: AsRef<Path>>(path: P) -> Result<()> {
+        std::fs::write(path, templates::DEFAULT_CONFIG)?;
+        Ok(())
     }
 
     pub fn parse_file<P: AsRef<Path>>(path: P) -> Result<Self> {
@@ -51,32 +87,33 @@ impl Config {
         }
 
         let s = std::fs::read_to_string(&path)?;
-        let parent = path.as_ref().parent().unwrap();
 
-        Self::parse(&s, parent)
+        Self::parse(&s)
     }
 
-    fn parse(s: &str, location: &Path) -> Result<Self> {
-        let config = toml::from_str(s).map_err(|e| e.into());
+    fn parse(s: &str) -> Result<Self> {
+        let mut config: Config = toml::from_str(s)?;
 
-        config.map(|mut c: Config| {
-            // Fix path to wasmfile
-            // If launch `wasmut` with the -c/--config flag, we can specify a
-            // configuration file to be used.
-            // In the config, the path in `wasmfile` is interpreted relative
-            // to the location of the configuration file.
-            // Thus we need to add the parent directory of the config
-            // as a prefix.
+        if config.engine.is_none() {
+            config.engine = Some(Default::default());
+        }
 
-            let wasmfile_path = Path::new(&c.module.wasmfile);
-            if wasmfile_path.is_relative() {
-                // We only need to add the prefix if the path is relative
-                let prefix_path = location.join(wasmfile_path);
-                c.module.wasmfile = prefix_path.to_str().expect("Invalid unicode").to_owned();
-            }
+        if config.filter.is_none() {
+            config.filter = Some(Default::default());
+        }
+        Ok(config)
+    }
 
-            c
-        })
+    pub fn engine(&self) -> &EngineConfig {
+        self.engine.as_ref().unwrap()
+    }
+
+    pub fn filter(&self) -> &FilterConfig {
+        self.filter.as_ref().unwrap()
+    }
+
+    pub fn report(&self) -> &ReportConfig {
+        self.report.as_ref().unwrap()
     }
 }
 
@@ -86,8 +123,19 @@ mod tests {
     use anyhow::Result;
 
     #[test]
+    fn default_engine_config() {
+        let config = Config::parse_str(
+            r#"
+    "#,
+        )
+        .unwrap();
+
+        assert_eq!(config.engine().threads(), num_cpus::get());
+    }
+
+    #[test]
     fn filters() -> Result<()> {
-        let filter: MutationFilterConfig = toml::from_str(
+        let filter: FilterConfig = toml::from_str(
             r#"
 
         allowed_files = ["src/", "test/"]
@@ -107,16 +155,6 @@ mod tests {
     }
 
     #[test]
-    fn empty_config() -> Result<()> {
-        let config = Config::parse_str(
-            r#"
-    "#,
-        );
-        assert!(config.is_err());
-        Ok(())
-    }
-
-    #[test]
     fn engine_config() -> Result<()> {
         let engine: EngineConfig = toml::from_str(
             r#"
@@ -131,35 +169,6 @@ mod tests {
     }
 
     #[test]
-    fn module_config() -> Result<()> {
-        let module: ModuleConfig = toml::from_str(
-            r#"
-        wasmfile = "test.wasm"
-    "#,
-        )?;
-        assert_eq!(module.wasmfile, "test.wasm".to_owned());
-        Ok(())
-    }
-
-    #[test]
-    fn parse_file_wasmfile_path_fix() -> Result<()> {
-        let config = Config::parse_file("testdata/simple_add/wasmut.toml")?;
-        assert_eq!(
-            config.module.wasmfile,
-            "testdata/simple_add/test.wasm".to_owned()
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn parse_str_wasmfile_path_fix() -> Result<()> {
-        let s = std::fs::read_to_string("testdata/simple_add/wasmut.toml")?;
-        let config = Config::parse_str(&s)?;
-        assert_eq!(config.module.wasmfile, "./test.wasm".to_owned());
-        Ok(())
-    }
-
-    #[test]
     fn report_config() -> Result<()> {
         let module: ReportConfig = toml::from_str(
             r#"
@@ -170,6 +179,25 @@ mod tests {
             module.path_rewrite,
             Some((String::from("foo"), String::from("bar")))
         );
+        Ok(())
+    }
+
+    #[test]
+    fn save_default_config_is_created() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let file_path = dir.path().join("wasmut.toml");
+        Config::save_default_config(&file_path)?;
+        assert!(file_path.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn save_default_config_is_parsed_correctly() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let file_path = dir.path().join("wasmut.toml");
+        Config::save_default_config(&file_path)?;
+
+        assert!(Config::parse_file(&file_path).is_ok());
         Ok(())
     }
 }
