@@ -32,12 +32,6 @@ pub enum CLICommand {
         config: Option<String>,
         wasmfile: String,
     },
-    /// Lookup an address
-    Lookup {
-        wasmfile: String,
-        address: u64,
-    },
-
     NewConfig {
         path: Option<String>,
     },

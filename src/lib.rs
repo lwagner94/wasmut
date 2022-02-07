@@ -5,6 +5,7 @@ pub mod defaults;
 pub mod executor;
 pub mod mutation;
 pub mod operator;
+pub mod output;
 pub mod policy;
 pub mod reporter;
 pub mod runtime;
@@ -13,15 +14,14 @@ pub mod wasmmodule;
 
 use anyhow::Result;
 
+use crate::cliarguments::{CLIArguments, CLICommand};
 use colored::*;
 use log::*;
 use std::path::Path;
 
-use crate::cliarguments::{CLIArguments, CLICommand};
-
 use crate::{
-    addressresolver::AddressResolver, config::Config, executor::Executor, mutation::MutationEngine,
-    policy::MutationPolicy, wasmmodule::WasmModule,
+    config::Config, executor::Executor, mutation::MutationEngine, policy::MutationPolicy,
+    wasmmodule::WasmModule,
 };
 
 fn list_functions(wasmfile: &str, config: &Config) -> Result<()> {
@@ -34,7 +34,7 @@ fn list_functions(wasmfile: &str, config: &Config) -> Result<()> {
         } else {
             "denied:  ".red()
         };
-        println!("{check_result_str}{function}");
+        output::output_string(format!("{check_result_str}{function}\n"));
     }
 
     Ok(())
@@ -50,19 +50,8 @@ fn list_files(wasmfile: &str, config: &Config) -> Result<()> {
         } else {
             "denied:  ".red()
         };
-        println!("{check_result_str}{file}");
+        output::output_string(format!("{check_result_str}{file}\n"));
     }
-
-    Ok(())
-}
-
-fn lookup(wasmfile: &str, addr: u64) -> Result<()> {
-    let bytes = std::fs::read(wasmfile).unwrap();
-    let resolver = AddressResolver::new(&bytes);
-
-    let res = resolver.lookup_address(addr);
-
-    dbg!(res);
 
     Ok(())
 }
@@ -80,9 +69,8 @@ fn mutate(wasmfile: &str, config: &Config) -> Result<()> {
     // dbg!(outcomes);
 
     let executed_mutants = reporter::prepare_results(&module, mutations, results);
-    let stdout = std::io::stdout();
-    let mut lock = stdout.lock();
-    let cli_reporter = reporter::CLIReporter::new(config.report(), &mut lock)?;
+
+    let cli_reporter = reporter::CLIReporter::new(config.report())?;
 
     use reporter::Reporter;
     cli_reporter.report(&executed_mutants)?;
@@ -153,9 +141,6 @@ pub fn run_main(cli: CLIArguments) -> Result<()> {
             init_rayon(&config);
             mutate(&wasmfile, &config)?;
         }
-        CLICommand::Lookup { wasmfile, address } => {
-            lookup(&wasmfile, address)?;
-        }
         CLICommand::NewConfig { path } => {
             new_config(path)?;
         }
@@ -219,8 +204,62 @@ mod tests {
 
     #[test]
     fn test_mutations() {
-        let _g = gag::Gag::stdout().unwrap();
         mutate_and_check("simple_add");
         mutate_and_check("factorial");
+    }
+
+    #[test]
+    fn test_list_functions() {
+        let config_path = Path::new("testdata/simple_add/wasmut.toml");
+        let module_path = Path::new("testdata/simple_add/test.wasm");
+
+        let args = CLIArguments {
+            command: CLICommand::ListFunctions {
+                config: Some(config_path.to_str().unwrap().into()),
+                wasmfile: module_path.to_str().unwrap().into(),
+            },
+        };
+        output::clear_output();
+        assert!(run_main(args).is_ok());
+
+        let command_output = output::get_output();
+        let a = command_output.split('\n');
+
+        for line in a {
+            assert!(
+                (line.contains(" add ") && line.contains("allowed")
+                    || !(line.contains(" add ") && line.contains("denied")))
+            )
+        }
+    }
+
+    #[test]
+    fn test_list_files() {
+        let config_path = Path::new("testdata/simple_add/wasmut_files.toml");
+        let module_path = Path::new("testdata/simple_add/test.wasm");
+
+        let args = CLIArguments {
+            command: CLICommand::ListFiles {
+                config: Some(config_path.to_str().unwrap().into()),
+                wasmfile: module_path.to_str().unwrap().into(),
+            },
+        };
+        output::clear_output();
+        assert!(run_main(args).is_ok());
+
+        let command_output = output::get_output();
+        let a = command_output.split('\n');
+
+        let mut hits = 0;
+
+        for line in a {
+            if line.contains("denied") && (line.contains("test.c"))
+                || (line.contains("simple_add.c") && line.contains("allowed"))
+            {
+                hits += 1;
+            };
+        }
+
+        assert_eq!(hits, 2);
     }
 }

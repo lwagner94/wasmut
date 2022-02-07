@@ -1,18 +1,18 @@
 use colored::*;
-use std::{cell::RefCell, io::Write};
 
 use super::{
     rewriter::PathRewriter, ExecutedMutant, MutationOutcome, Reporter, SyntectContext,
     SyntectFileContext,
 };
 use crate::config::ReportConfig;
+use crate::output;
 
 use anyhow::{bail, Result};
 
-pub struct CLIReporter<'a> {
-    writer: RefCell<&'a mut dyn Write>,
+pub struct CLIReporter {
     path_rewriter: Option<PathRewriter>,
     highlighter_context: SyntectContext,
+    should_colorize: bool,
 }
 
 impl From<MutationOutcome> for ColoredString {
@@ -26,8 +26,8 @@ impl From<MutationOutcome> for ColoredString {
     }
 }
 
-impl<'a> CLIReporter<'a> {
-    pub fn new<W: Write>(config: &ReportConfig, writer: &'a mut W) -> Result<Self> {
+impl CLIReporter {
+    pub fn new(config: &ReportConfig) -> Result<Self> {
         let path_rewriter = if let Some((regex, replacement)) = &config.path_rewrite() {
             Some(PathRewriter::new(regex, replacement)?)
         } else {
@@ -35,9 +35,9 @@ impl<'a> CLIReporter<'a> {
         };
 
         Ok(CLIReporter {
-            writer: RefCell::new(writer),
             path_rewriter,
             highlighter_context: SyntectContext::new("Solarized (dark)"),
+            should_colorize: control::ShouldColorize::from_env().should_colorize(),
         })
     }
 
@@ -51,7 +51,6 @@ impl<'a> CLIReporter<'a> {
                 MutationOutcome::Error => (alive, timeout, killed, error + 1),
             },
         );
-        let mut writer = self.writer.borrow_mut();
 
         let alive_str: ColoredString = MutationOutcome::Alive.into();
         let timeout_str: ColoredString = MutationOutcome::Timeout.into();
@@ -61,12 +60,12 @@ impl<'a> CLIReporter<'a> {
         let mutation_score =
             100f32 * (timeout + killed + error) as f32 / (alive + timeout + killed + error) as f32;
 
-        writeln!(writer).unwrap();
-        writeln!(writer, "{0:15} {1}", alive_str, alive).unwrap();
-        writeln!(writer, "{0:15} {1}", timeout_str, timeout).unwrap();
-        writeln!(writer, "{0:15} {1}", error_str, error).unwrap();
-        writeln!(writer, "{0:15} {1}", killed_str, killed).unwrap();
-        writeln!(writer, "{0:15} {1}%", "Mutation score", mutation_score).unwrap();
+        output::output_string("\n");
+        output::output_string(format!("{0:15} {1}\n", alive_str, alive));
+        output::output_string(format!("{0:15} {1}\n", timeout_str, timeout));
+        output::output_string(format!("{0:15} {1}\n", error_str, error));
+        output::output_string(format!("{0:15} {1}\n", killed_str, killed));
+        output::output_string(format!("{0:15} {1}%\n", "Mutation score", mutation_score));
     }
 
     fn enumerate_mutants(&self, executed_mutants: &[ExecutedMutant]) -> Result<()> {
@@ -111,7 +110,7 @@ impl<'a> CLIReporter<'a> {
 
                 match Self::get_line_from_file(&file, line_nr) {
                     Ok(line) => {
-                        line_in_file = if control::ShouldColorize::from_env().should_colorize() {
+                        line_in_file = if self.should_colorize {
                             highlighter.terminal_string(&line)
                         } else {
                             line
@@ -135,14 +134,10 @@ impl<'a> CLIReporter<'a> {
 
         // let status = color.paint(format!("{:?}", mutant.outcome));
 
-        let mut writer = self.writer.borrow_mut();
-
         let color_reset = "\x1b[0m";
-        writeln!(
-            writer,
-            "{file_line_col}: \n{outcome}: {description}\n{line_in_file}{color_reset}\n{column_indicator}\n"
-        )
-        .unwrap();
+        output::output_string(
+            format!("{file_line_col}: \n{outcome}: {description}\n{line_in_file}{color_reset}\n{column_indicator}\n")
+        );
     }
 
     fn get_line_from_file(file: &str, line_nr: u64) -> Result<String> {
@@ -160,7 +155,7 @@ impl<'a> CLIReporter<'a> {
     }
 }
 
-impl<'a> Reporter for CLIReporter<'a> {
+impl Reporter for CLIReporter {
     fn report(&self, executed_mutants: &[ExecutedMutant]) -> Result<()> {
         self.enumerate_mutants(executed_mutants)?;
         self.summary(executed_mutants);
@@ -174,7 +169,6 @@ mod tests {
         addressresolver::CodeLocation, config::Config, operator::ops::BinaryOperatorAddToSub,
     };
     use parity_wasm::elements::Instruction;
-    use std::io::{Read, Seek};
 
     use super::*;
     #[test]
@@ -192,9 +186,6 @@ mod tests {
     }
 
     fn report_to_string(executed_mutants: Vec<ExecutedMutant>) -> String {
-        let buffer = Vec::new();
-        let mut cursor = std::io::Cursor::new(buffer);
-
         let config = Config::parse_str(
             r#"
             [report]
@@ -203,12 +194,11 @@ mod tests {
         )
         .unwrap();
 
-        let reporter = CLIReporter::new(config.report(), &mut cursor).unwrap();
+        let reporter = CLIReporter::new(config.report()).unwrap();
+        output::clear_output();
         reporter.report(&executed_mutants).unwrap();
-        let mut output = String::new();
-        cursor.seek(std::io::SeekFrom::Start(0)).unwrap();
-        cursor.read_to_string(&mut output).unwrap();
-        output
+
+        output::get_output()
     }
 
     #[test]
