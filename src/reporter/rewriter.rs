@@ -1,7 +1,6 @@
 use regex::Regex;
 
-use crate::error::Result;
-
+use anyhow::{Context, Result};
 pub struct PathRewriter {
     regex: Regex,
     replacement: String,
@@ -9,8 +8,11 @@ pub struct PathRewriter {
 
 impl PathRewriter {
     pub fn new<T: AsRef<str>>(regex: T, replacement: T) -> Result<Self> {
+        let regex = regex.as_ref();
+
         Ok(Self {
-            regex: Regex::new(regex.as_ref())?,
+            regex: Regex::new(regex)
+                .with_context(|| format!("Failed to compile path replacement regex \"{regex}\""))?,
             replacement: replacement.as_ref().into(),
         })
     }

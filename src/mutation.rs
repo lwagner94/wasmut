@@ -1,9 +1,9 @@
-use crate::error::Result;
 use crate::operator::InstructionContext;
 use crate::operator::InstructionReplacement;
 use crate::operator::OperatorRegistry;
 use crate::wasmmodule::CallbackType;
 use crate::{config::Config, policy::MutationPolicy, wasmmodule::WasmModule};
+use anyhow::Result;
 
 #[derive(Debug)]
 pub struct Mutation {

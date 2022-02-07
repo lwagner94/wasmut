@@ -1,10 +1,7 @@
+use anyhow::{Context, Result};
 use std::path::Path;
 
-use crate::{
-    defaults::TIMEOUT_MULTIPLIER,
-    error::{Error, Result},
-    templates,
-};
+use crate::{defaults::TIMEOUT_MULTIPLIER, templates};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Default, Clone)]
@@ -75,18 +72,17 @@ impl Config {
     }
 
     pub fn save_default_config<P: AsRef<Path>>(path: P) -> Result<()> {
-        std::fs::write(path, templates::DEFAULT_CONFIG)?;
+        let p = path.as_ref();
+        std::fs::write(p, templates::DEFAULT_CONFIG)
+            .with_context(|| format!("Failed to write configuration file {p:?}"))?;
         Ok(())
     }
 
     pub fn parse_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        if !path.as_ref().is_file() || !path.as_ref().exists() {
-            return Err(Error::FileNotFoundError(
-                path.as_ref().to_str().expect("Invalid unicode").to_owned(),
-            ));
-        }
+        let p = path.as_ref();
 
-        let s = std::fs::read_to_string(&path)?;
+        let s = std::fs::read_to_string(p)
+            .with_context(|| format!("Failed to read configuration file {p:?}"))?;
 
         Self::parse(&s)
     }

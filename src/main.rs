@@ -126,7 +126,8 @@ fn mutate(wasmfile: &str, config: &Config) -> Result<()> {
 
 fn new_config(path: Option<String>) -> Result<()> {
     let path = path.unwrap_or_else(|| "wasmut.toml".into());
-    Config::save_default_config(path)?;
+    Config::save_default_config(&path)?;
+    info!("Created new configuration file {path}");
     Ok(())
 }
 
@@ -165,7 +166,7 @@ fn load_config(config_path: Option<String>) -> Result<Config> {
 fn init_rayon(config: &Config) {
     let threads = config.engine().threads();
 
-    info!("Using {threads} workers to run mutants");
+    info!("Using {threads} workers");
     rayon::ThreadPoolBuilder::new()
         .num_threads(threads as usize)
         .build_global()
@@ -218,7 +219,7 @@ fn main() {
     match run_main() {
         Ok(_) => {}
         Err(e) => {
-            error!("{e}");
+            error!("{e:?}");
             std::process::exit(1);
         }
     }

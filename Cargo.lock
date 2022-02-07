@@ -2239,7 +2239,6 @@ dependencies = [
  "serde",
  "syntect",
  "tempfile",
- "thiserror",
  "toml",
  "wasmer",
  "wasmer-compiler-singlepass",

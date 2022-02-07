@@ -1,4 +1,6 @@
-use crate::{config::Config, error::Result};
+use crate::config::Config;
+
+use anyhow::{Context, Result};
 
 use regex::Regex;
 
@@ -137,7 +139,8 @@ impl RegexListBuilder {
         let mut allowlist = Vec::new();
 
         for allowed in self.regexes {
-            let regex = Regex::new(&allowed)?;
+            let regex = Regex::new(&allowed)
+                .with_context(|| format!("Failed to compile regex string \"{allowed}\""))?;
             allowlist.push(regex);
         }
 
@@ -156,6 +159,7 @@ impl RegexList {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Result;
 
     #[test]
     fn build_regexlist_trivial() -> Result<()> {

@@ -1,10 +1,10 @@
 use indicatif::{ParallelProgressIterator, ProgressBar};
 
-use crate::error::Error;
 use crate::mutation::Mutation;
 use crate::policy::ExecutionPolicy;
 use crate::runtime::ExecutionResult;
-use crate::{config::Config, error::Result, runtime, wasmmodule::WasmModule};
+use crate::{config::Config, runtime, wasmmodule::WasmModule};
+use anyhow::{bail, Result};
 
 use rayon::prelude::*;
 
@@ -34,13 +34,13 @@ impl Executor {
                 if exit_code == 0 {
                     execution_cost
                 } else {
-                    return Err(Error::WasmModuleNonzeroExit(exit_code));
+                    bail!("Module without any mutations returned exit code {exit_code}");
                 }
             }
             ExecutionResult::Timeout => {
                 panic!("Execution limit exceeded even though we set no limit!")
             }
-            ExecutionResult::Error => return Err(Error::WasmModuleFailed),
+            ExecutionResult::Error => bail!("Module failed to execute"),
         };
 
         log::info!("Original module executed in {execution_cost} cycles");
@@ -89,14 +89,14 @@ mod tests {
     #[test]
     fn original_module_nonzero_exit() -> Result<()> {
         let result = execute_module("nonzero_exit", &[]);
-        assert!(matches!(result, Err(Error::WasmModuleNonzeroExit(1))));
+        assert!(result.is_err());
         Ok(())
     }
 
     #[test]
     fn original_module_rust_fail() -> Result<()> {
         let result = execute_module("rust_fail", &[]);
-        assert!(matches!(result, Err(Error::WasmModuleFailed)));
+        assert!(result.is_err());
         Ok(())
     }
 
@@ -119,8 +119,12 @@ mod tests {
             )),
         }];
 
-        let result = execute_module("nonzero_exit", &mutations);
-        assert!(matches!(result, Err(Error::WasmModuleNonzeroExit(1))));
+        let result = execute_module("simple_add", &mutations)?;
+        assert!(matches!(
+            result[0],
+            ExecutionResult::ProcessExit { exit_code: 1, .. }
+        ));
+
         Ok(())
     }
 }

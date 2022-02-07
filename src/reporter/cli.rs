@@ -5,10 +5,9 @@ use super::{
     rewriter::PathRewriter, ExecutedMutant, MutationOutcome, Reporter, SyntectContext,
     SyntectFileContext,
 };
-use crate::{
-    config::ReportConfig,
-    error::{Error, Result},
-};
+use crate::config::ReportConfig;
+
+use anyhow::{bail, Result};
 
 pub struct CLIReporter<'a> {
     writer: RefCell<&'a mut dyn Write>,
@@ -157,7 +156,7 @@ impl<'a> CLIReporter<'a> {
             }
         }
 
-        Err(Error::ReportGenerationFailed("Line not found"))
+        bail!("Could not read line {line_nr} from file {file}");
     }
 }
 

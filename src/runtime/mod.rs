@@ -3,7 +3,7 @@ pub mod wasmer;
 use crate::policy::ExecutionPolicy;
 use crate::wasmmodule::WasmModule;
 
-use crate::error::Result;
+use anyhow::Result;
 
 use self::wasmer::WasmerRuntime;
 

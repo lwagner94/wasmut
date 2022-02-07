@@ -11,10 +11,11 @@ use std::{
     path::Path,
 };
 
+use anyhow::Result;
+
 use crate::{
     addressresolver::{AddressResolver, CodeLocation},
     config::Config,
-    error::Result,
     mutation::Mutation,
     operator::InstructionReplacement,
     runtime::ExecutionResult,

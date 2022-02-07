@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use crate::{
-    error::{Error, Result},
     policy::ExecutionPolicy,
     runtime::{ExecutionResult, Runtime},
 };
+use anyhow::{Context, Result};
 use wasmer::wasmparser::Operator;
 use wasmer::CompilerConfig;
 use wasmer_compiler_singlepass::Singlepass;
@@ -33,8 +33,7 @@ impl Runtime for WasmerRuntime {
 
         let store = Store::new(&Universal::new(compiler_config).engine());
         let bytecode: Vec<u8> = module.try_into()?;
-        let module = Module::new(&store, &bytecode)
-            .map_err(|e| Error::RuntimeCreation { source: e.into() })?;
+        let module = Module::new(&store, &bytecode).context("Failed to create wasmer module")?;
 
         let stdout = Box::new(Pipe::new());
         let stderr = Box::new(Pipe::new());
@@ -43,13 +42,13 @@ impl Runtime for WasmerRuntime {
             .stdout(stdout)
             .stderr(stderr)
             .finalize()
-            .map_err(|e| Error::RuntimeCreation { source: e.into() })?;
+            .context("Failed to create wasmer-wasi env")?;
 
         let import_object = wasi_env
             .import_object(&module)
-            .map_err(|e| Error::RuntimeCreation { source: e.into() })?;
-        let instance = Instance::new(&module, &import_object)
-            .map_err(|e| Error::RuntimeCreation { source: e.into() })?;
+            .context("Failed to create import object")?;
+        let instance =
+            Instance::new(&module, &import_object).context("Failed to create wasmer instance")?;
 
         Ok(WasmerRuntime { instance })
     }
@@ -66,9 +65,9 @@ impl Runtime for WasmerRuntime {
             .instance
             .exports
             .get_function("_start")
-            .map_err(|e| Error::RuntimeCall { source: e.into() })?
+            .context("Failed to resolve _start function")?
             .native::<(), ()>()
-            .map_err(|e| Error::RuntimeCall { source: e.into() })?;
+            .context("Failed to get native _start function")?;
 
         let result = func.call().map(|_| 0);
 

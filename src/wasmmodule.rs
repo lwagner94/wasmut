@@ -1,11 +1,10 @@
 use std::collections::HashSet;
 
-use crate::{
-    addressresolver::AddressResolver,
-    error::{Error, Result},
-    mutation::Mutation,
-};
+use crate::{addressresolver::AddressResolver, mutation::Mutation};
 use parity_wasm::elements::{External, Instruction, Module, Type, ValueType};
+
+use anyhow::{Context, Result};
+
 use rayon::prelude::*;
 
 // TODO: Encapsulate parity_wasm::Instruction in own type?
@@ -67,7 +66,7 @@ impl WasmModule {
 
     pub fn from_bytes(bytes: Vec<u8>) -> Result<WasmModule> {
         let module: Module = parity_wasm::elements::deserialize_buffer(&bytes)
-            .map_err(|e| Error::BytecodeDeserialization { source: e })?;
+            .context("Bytecode deserialization failed")?;
 
         Ok(WasmModule { module, bytes })
     }
@@ -76,7 +75,7 @@ impl WasmModule {
         let code_section = self
             .module
             .code_section()
-            .ok_or(Error::WasmModuleNoCodeSection)?;
+            .context("Module has no code section")?;
 
         Ok(code_section
             .bodies()
@@ -179,7 +178,7 @@ impl WasmModule {
         let type_section = self
             .module
             .type_section()
-            .ok_or(Error::WasmModuleMalformed("No type section"))?;
+            .context("Module has no type section")?;
 
         let mut candidates = Vec::new();
 
@@ -236,11 +235,9 @@ impl WasmModule {
 }
 
 impl TryFrom<WasmModule> for Vec<u8> {
-    type Error = Error;
+    type Error = anyhow::Error;
     fn try_from(module: WasmModule) -> Result<Vec<u8>> {
-        let bytes = parity_wasm::serialize(module.module)
-            .map_err(|e| Error::BytecodeSerialization { source: e })?;
-        Ok(bytes)
+        parity_wasm::serialize(module.module).context("Failed to serialize module")
     }
 }
 
