@@ -41,9 +41,6 @@ pub enum CLICommand {
     NewConfig {
         path: Option<String>,
     },
-
-    /// Test stuff
-    Test,
 }
 
 impl CLIArguments {

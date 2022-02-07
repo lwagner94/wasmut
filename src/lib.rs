@@ -14,7 +14,6 @@ pub mod wasmmodule;
 use anyhow::Result;
 
 use colored::*;
-use env_logger::Builder;
 use log::*;
 use std::path::Path;
 
@@ -73,7 +72,7 @@ fn mutate(wasmfile: &str, config: &Config) -> Result<()> {
     let mutator = MutationEngine::new(config)?;
     let mutations = mutator.discover_mutation_positions(&module)?;
 
-    dbg!(&mutations);
+    //dbg!(&mutations);
 
     let executor = Executor::new(config);
     let results = executor.execute(&module, &mutations)?;
@@ -97,16 +96,6 @@ fn new_config(path: Option<String>) -> Result<()> {
     let path = path.unwrap_or_else(|| "wasmut.toml".into());
     Config::save_default_config(&path)?;
     info!("Created new configuration file {path}");
-    Ok(())
-}
-
-fn test(_config: &Config) -> Result<()> {
-    // let module = WasmModule::from_file(&config.module.wasmfile)?;
-    // let mutator = MutationEngine::new(config)?;
-    // let mutations = mutator.discover_mutation_positions(&module)?;
-
-    // dbg!(mutations.len());
-
     Ok(())
 }
 
@@ -136,20 +125,18 @@ fn init_rayon(config: &Config) {
     let threads = config.engine().threads();
 
     info!("Using {threads} workers");
-    rayon::ThreadPoolBuilder::new()
+
+    // We ignore the error, because during
+    // integration testing we might
+    // call this functions twice in a process.
+    // build_global only seems to return an error
+    // if called twice, so this should be fine.
+    let _ = rayon::ThreadPoolBuilder::new()
         .num_threads(threads as usize)
-        .build_global()
-        .unwrap();
+        .build_global();
 }
 
 pub fn run_main(cli: CLIArguments) -> Result<()> {
-    Builder::new()
-        .filter_level(LevelFilter::Info)
-        .format_timestamp(None)
-        .format_target(false)
-        .filter_module("wasmer_wasi", LevelFilter::Warn)
-        .init();
-
     match cli.command {
         CLICommand::ListFunctions { config, wasmfile } => {
             let config = load_config(config)?;
@@ -172,12 +159,68 @@ pub fn run_main(cli: CLIArguments) -> Result<()> {
         CLICommand::NewConfig { path } => {
             new_config(path)?;
         }
-        CLICommand::Test => {
-            let config = load_config(None)?;
-            init_rayon(&config);
-            test(&config)?;
-        }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_config_is_created_standard_path() {
+        let args = CLIArguments {
+            command: CLICommand::NewConfig { path: None },
+        };
+
+        assert!(run_main(args).is_ok());
+        let config_file = Path::new("wasmut.toml");
+        assert!(config_file.exists());
+        assert!(Config::parse_file(config_file).is_ok());
+
+        std::fs::remove_file("wasmut.toml").unwrap();
+    }
+
+    #[test]
+    fn new_config_is_created_custom_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_file = dir.path().join("custom.toml");
+        let path_str = config_file.to_str().unwrap().into();
+
+        let args = CLIArguments {
+            command: CLICommand::NewConfig {
+                path: Some(path_str),
+            },
+        };
+
+        assert!(run_main(args).is_ok());
+        assert!(config_file.exists());
+    }
+
+    fn mutate_and_check(testcase: &str) {
+        let config_path = Path::new(&format!("testdata/{testcase}/wasmut.toml"))
+            .canonicalize()
+            .unwrap();
+        let module_path = Path::new(&format!("testdata/{testcase}/test.wasm"))
+            .canonicalize()
+            .unwrap();
+
+        let args = CLIArguments {
+            command: CLICommand::Mutate {
+                config: Some(config_path.to_str().unwrap().into()),
+                wasmfile: module_path.to_str().unwrap().into(),
+            },
+        };
+
+        assert!(run_main(args).is_ok());
+        // TODO: Configure output directory.
+    }
+
+    #[test]
+    fn test_mutations() {
+        let _g = gag::Gag::stdout().unwrap();
+        mutate_and_check("simple_add");
+        mutate_and_check("factorial");
+    }
 }
