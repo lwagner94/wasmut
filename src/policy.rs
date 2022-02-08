@@ -14,14 +14,12 @@ pub enum ExecutionPolicy {
     RunUntilReturn,
 }
 
-#[derive(Debug, Clone)]
 pub struct MutationPolicyBuilder {
     allowed_functions: RegexListBuilder,
     allowed_files: RegexListBuilder,
     anything_allowed: bool,
 }
 
-#[derive(Debug)]
 pub struct MutationPolicy {
     allowed_functions: RegexList,
     allowed_files: RegexList,
@@ -29,14 +27,6 @@ pub struct MutationPolicy {
 }
 
 impl MutationPolicyBuilder {
-    pub fn new() -> Self {
-        Self {
-            allowed_functions: RegexListBuilder::new(),
-            allowed_files: RegexListBuilder::new(),
-            anything_allowed: true,
-        }
-    }
-
     pub fn allow_function<T: AsRef<str>>(self, name: T) -> Self {
         Self {
             allowed_functions: self.allowed_functions.push(name),
@@ -64,13 +54,17 @@ impl MutationPolicyBuilder {
 
 impl Default for MutationPolicyBuilder {
     fn default() -> Self {
-        Self::new()
+        Self {
+            allowed_functions: RegexListBuilder::new(),
+            allowed_files: RegexListBuilder::new(),
+            anything_allowed: true,
+        }
     }
 }
 
 impl MutationPolicy {
     pub fn from_config(config: &Config) -> Result<Self> {
-        let mut builder = MutationPolicyBuilder::new();
+        let mut builder = MutationPolicyBuilder::default();
 
         if let Some(files) = config.filter().allowed_files() {
             for file in files {
@@ -113,12 +107,11 @@ impl Default for MutationPolicy {
     }
 }
 
-#[derive(Debug, Clone)]
 struct RegexListBuilder {
     regexes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Default)]
 struct RegexList {
     regexes: Vec<Regex>,
 }
@@ -188,7 +181,7 @@ mod tests {
 
     #[test]
     fn build_mutation_policy() -> Result<()> {
-        let policy = MutationPolicyBuilder::new()
+        let policy = MutationPolicyBuilder::default()
             .allow_function("^test_")
             .allow_file("^src/")
             .build()

@@ -5,7 +5,6 @@ use crate::wasmmodule::CallbackType;
 use crate::{config::Config, policy::MutationPolicy, wasmmodule::WasmModule};
 use anyhow::Result;
 
-#[derive(Debug)]
 pub struct Mutation {
     pub function_number: u64,
     pub statement_number: u64,

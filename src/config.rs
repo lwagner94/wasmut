@@ -22,15 +22,10 @@ impl FilterConfig {
 
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct EngineConfig {
-    threads: Option<usize>,
     timeout_multiplier: Option<f64>,
 }
 
 impl EngineConfig {
-    pub fn threads(&self) -> usize {
-        self.threads.unwrap_or_else(num_cpus::get)
-    }
-
     pub fn timeout_multiplier(&self) -> f64 {
         self.timeout_multiplier.unwrap_or(TIMEOUT_MULTIPLIER)
     }
@@ -119,17 +114,6 @@ mod tests {
     use anyhow::Result;
 
     #[test]
-    fn default_engine_config() {
-        let config = Config::parse_str(
-            r#"
-    "#,
-        )
-        .unwrap();
-
-        assert_eq!(config.engine().threads(), num_cpus::get());
-    }
-
-    #[test]
     fn filters() -> Result<()> {
         let filter: FilterConfig = toml::from_str(
             r#"
@@ -154,12 +138,10 @@ mod tests {
     fn engine_config() -> Result<()> {
         let engine: EngineConfig = toml::from_str(
             r#"
-        threads = 4
         timeout_multiplier = 2
 
     "#,
         )?;
-        assert_eq!(engine.threads, Some(4));
         assert_eq!(engine.timeout_multiplier, Some(2.0));
         Ok(())
     }

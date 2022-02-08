@@ -103,11 +103,15 @@ struct MutatedFile {
     link: Option<String>,
 }
 
-pub fn generate_html(_config: &Config, executed_mutants: &[ExecutedMutant]) -> Result<()> {
+pub fn generate_html(
+    _config: &Config,
+    executed_mutants: &[ExecutedMutant],
+    output_directory: &str,
+) -> Result<()> {
     let file_mapping = map_mutants_to_files(executed_mutants);
 
-    let _ = std::fs::remove_dir_all("report");
-    std::fs::create_dir("report")?;
+    let _ = std::fs::remove_dir_all(output_directory);
+    std::fs::create_dir(output_directory)?;
 
     let template_engine = init_template_engine();
 
@@ -121,7 +125,8 @@ pub fn generate_html(_config: &Config, executed_mutants: &[ExecutedMutant]) -> R
                 let output_file = generate_filename(&file);
 
                 // TODO: report directory
-                let writer = BufWriter::new(File::create(format!("report/{output_file}"))?);
+                let writer =
+                    BufWriter::new(File::create(format!("{output_directory}/{output_file}"))?);
 
                 let data = BTreeMap::from([("file", to_json(&file)), ("lines", to_json(lines))]);
 
@@ -142,7 +147,7 @@ pub fn generate_html(_config: &Config, executed_mutants: &[ExecutedMutant]) -> R
     }
 
     let data = BTreeMap::from([("source_files", to_json(mutated_files))]);
-    let writer = BufWriter::new(File::create("report/index.html")?);
+    let writer = BufWriter::new(File::create(format!("{output_directory}/index.html"))?);
     // TODO: Refactor error
     template_engine
         .render_to_write("index", &data, writer)

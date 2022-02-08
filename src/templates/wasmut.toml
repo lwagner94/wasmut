@@ -1,11 +1,32 @@
-[module]
-wasmfile = "test.wasm"
+#[engine]
+#    Number of threads that should be used to execute mutants
+#    Before executing mutants, wasmut will run the wasm module without 
+#    any mutations and measure the number of cycles it takes to execute.
+#    Mutants then are allowed to execute with a timeout of 
+#    timeout = original_cycles * timeout_multiplier
+#timeout_multiplier = 2.0
 
-[engine]
-#threads = 8
+#[filter]
+#    By default, all files and functions are allowed, which means that
+#    every wasm-instruction can potentially be mutated. 
+#    This is not very practical, so it possible to specify and allowlist
+#    for functions and/or files.
+# 
+#    In allowed_functions and allowed_files, you can specify a list of regular expressions
+#    that are used to match the function and file names. A wasm-instruction is allowed 
+#    to be mutated if its function or file matches at least one of the corresponding 
+#    regular expressions. An empty regular expression also matches everything.
+#
+#    Note: Use the wasmut list-files or wasmut list-functions commands
+#          to get a list of all functions and files in the wasm module.
 
-[filter]
-#allowed_functions = ["^add"]
-#allowed_files = ["foo/src"]
+#allowed_function = ["^add"]
+#allowed_file = ["src/add.c", "src/main.c"]
 
 [report]
+path_rewrite = ["^/foo/src/", "/bar/src/"]
+
+
+
+
+

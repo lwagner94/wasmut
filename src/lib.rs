@@ -12,11 +12,13 @@ pub mod runtime;
 pub mod templates;
 pub mod wasmmodule;
 
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
+use cliarguments::Output;
 
 use crate::cliarguments::{CLIArguments, CLICommand};
 use colored::*;
 use log::*;
+use reporter::Reporter;
 use std::path::Path;
 
 use crate::{
@@ -56,7 +58,12 @@ fn list_files(wasmfile: &str, config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn mutate(wasmfile: &str, config: &Config) -> Result<()> {
+fn mutate(
+    wasmfile: &str,
+    config: &Config,
+    report_type: &Output,
+    output_directory: &str,
+) -> Result<()> {
     let module = WasmModule::from_file(wasmfile)?;
     let mutator = MutationEngine::new(config)?;
     let mutations = mutator.discover_mutation_positions(&module)?;
@@ -70,12 +77,15 @@ fn mutate(wasmfile: &str, config: &Config) -> Result<()> {
 
     let executed_mutants = reporter::prepare_results(&module, mutations, results);
 
-    let cli_reporter = reporter::CLIReporter::new(config.report())?;
-
-    use reporter::Reporter;
-    cli_reporter.report(&executed_mutants)?;
-
-    reporter::generate_html(config, &executed_mutants)?;
+    match report_type {
+        Output::Console => {
+            let cli_reporter = reporter::CLIReporter::new(config.report())?;
+            cli_reporter.report(&executed_mutants)?;
+        }
+        Output::HTML => {
+            reporter::generate_html(config, &executed_mutants, output_directory)?;
+        }
+    }
 
     Ok(())
 }
@@ -87,30 +97,41 @@ fn new_config(path: Option<String>) -> Result<()> {
     Ok(())
 }
 
-fn load_config(config_path: Option<String>) -> Result<Config> {
-    let config = if let Some(config_path) = config_path {
+fn load_config(config_path: Option<String>, module: &str, config_samedir: bool) -> Result<Config> {
+    if config_path.is_some() && config_samedir {
+        bail!("Cannot use --config/-c and --config-same-dir/-C at the same time!");
+    }
+
+    if let Some(config_path) = config_path {
         // The user has supplied a configuration file
         info!("Loading user-specified configuration file {config_path:?}");
-        Config::parse_file(config_path)?
+        Ok(Config::parse_file(config_path)?)
+    } else if config_samedir {
+        // The user has specified the -C option, indicating that wasmut should look for
+        // a configuration file in the same directory as the module
+        let module_directory = Path::new(module)
+            .parent()
+            .context("wasmmodule has no parent path")?;
+        let config_path = module_directory.join("wasmut.toml");
+        info!("Loading configuration file from module directory: {config_path:?}");
+        Ok(Config::parse_file(config_path)?)
     } else {
         let default_path = Path::new("wasmut.toml");
 
         if default_path.exists() {
             // wasmut.toml exists in current directory
             info!("Loading default configuration file {config_path:?}");
-            Config::parse_file(default_path)?
+            Ok(Config::parse_file(default_path)?)
         } else {
             // No config found, using defaults
             info!("No configuration file found or specified, using default config");
-            Config::default()
+            Ok(Config::default())
         }
-    };
-
-    Ok(config)
+    }
 }
 
-fn init_rayon(config: &Config) {
-    let threads = config.engine().threads();
+fn init_rayon(threads: Option<usize>) {
+    let threads = threads.unwrap_or_else(num_cpus::get);
 
     info!("Using {threads} workers");
 
@@ -126,20 +147,35 @@ fn init_rayon(config: &Config) {
 
 pub fn run_main(cli: CLIArguments) -> Result<()> {
     match cli.command {
-        CLICommand::ListFunctions { config, wasmfile } => {
-            let config = load_config(config)?;
-            init_rayon(&config);
+        CLICommand::ListFunctions {
+            config,
+            wasmfile,
+            config_samedir,
+        } => {
+            let config = load_config(config, &wasmfile, config_samedir)?;
             list_functions(&wasmfile, &config)?;
         }
-        CLICommand::ListFiles { config, wasmfile } => {
-            let config = load_config(config)?;
-            init_rayon(&config);
+        CLICommand::ListFiles {
+            config,
+            wasmfile,
+            config_samedir,
+        } => {
+            let config = load_config(config, &wasmfile, config_samedir)?;
             list_files(&wasmfile, &config)?;
         }
-        CLICommand::Mutate { config, wasmfile } => {
-            let config = load_config(config)?;
-            init_rayon(&config);
-            mutate(&wasmfile, &config)?;
+        CLICommand::Mutate {
+            config,
+            wasmfile,
+            threads,
+            config_samedir,
+            report,
+            output,
+        } => {
+            dbg!(&report);
+            dbg!(&output);
+            let config = load_config(config, &wasmfile, config_samedir)?;
+            init_rayon(threads);
+            mutate(&wasmfile, &config, &report, &output)?;
         }
         CLICommand::NewConfig { path } => {
             new_config(path)?;
@@ -171,35 +207,36 @@ mod tests {
     fn new_config_is_created_custom_path() {
         let dir = tempfile::tempdir().unwrap();
         let config_file = dir.path().join("custom.toml");
-        let path_str = config_file.to_str().unwrap().into();
+        let path_str = config_file.to_str().unwrap();
 
-        let args = CLIArguments {
-            command: CLICommand::NewConfig {
-                path: Some(path_str),
-            },
-        };
+        let args = CLIArguments::parse_args_from(vec!["wasmut", "new-config", path_str]);
 
         assert!(run_main(args).is_ok());
         assert!(config_file.exists());
     }
 
     fn mutate_and_check(testcase: &str) {
-        let config_path = Path::new(&format!("testdata/{testcase}/wasmut.toml"))
-            .canonicalize()
-            .unwrap();
         let module_path = Path::new(&format!("testdata/{testcase}/test.wasm"))
             .canonicalize()
             .unwrap();
 
-        let args = CLIArguments {
-            command: CLICommand::Mutate {
-                config: Some(config_path.to_str().unwrap().into()),
-                wasmfile: module_path.to_str().unwrap().into(),
-            },
-        };
+        let output_dir = tempfile::tempdir().unwrap();
+
+        let output_dir_str = output_dir.path().to_str().unwrap();
+
+        let args = CLIArguments::parse_args_from(vec![
+            "wasmut",
+            "mutate",
+            "-C",
+            "-r",
+            "html",
+            "-o",
+            output_dir_str,
+            module_path.to_str().unwrap(),
+        ]);
 
         assert!(run_main(args).is_ok());
-        // TODO: Configure output directory.
+        assert!(output_dir.path().join("index.html").exists());
     }
 
     #[test]
@@ -213,12 +250,14 @@ mod tests {
         let config_path = Path::new("testdata/simple_add/wasmut.toml");
         let module_path = Path::new("testdata/simple_add/test.wasm");
 
-        let args = CLIArguments {
-            command: CLICommand::ListFunctions {
-                config: Some(config_path.to_str().unwrap().into()),
-                wasmfile: module_path.to_str().unwrap().into(),
-            },
-        };
+        let args = CLIArguments::parse_args_from(vec![
+            "wasmut",
+            "list-functions",
+            "-c",
+            config_path.to_str().unwrap(),
+            module_path.to_str().unwrap(),
+        ]);
+
         output::clear_output();
         assert!(run_main(args).is_ok());
 
@@ -238,12 +277,13 @@ mod tests {
         let config_path = Path::new("testdata/simple_add/wasmut_files.toml");
         let module_path = Path::new("testdata/simple_add/test.wasm");
 
-        let args = CLIArguments {
-            command: CLICommand::ListFiles {
-                config: Some(config_path.to_str().unwrap().into()),
-                wasmfile: module_path.to_str().unwrap().into(),
-            },
-        };
+        let args = CLIArguments::parse_args_from(vec![
+            "wasmut",
+            "list-files",
+            "-c",
+            config_path.to_str().unwrap(),
+            module_path.to_str().unwrap(),
+        ]);
         output::clear_output();
         assert!(run_main(args).is_ok());
 
