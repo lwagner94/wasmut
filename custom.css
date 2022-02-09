@@ -1,0 +1,38 @@
+
+.source {
+    font-family: monospace;
+    font-size: 13pt;
+    color: black;
+    white-space: pre;
+}
+
+.mutant-counter {
+    font-family: monospace;
+}
+
+
+.source-table {
+    margin: auto;
+    width: 80%;
+}
+
+.line-number {
+    font-family: monospace;
+}
+
+.line-class-alive {
+    background-color: #ffc4c4;
+}
+
+.line-class-killed {
+    background-color: #b6ffa0;
+}
+
+.line-class-timeout-error {
+    background-color: #f4ff91;
+}
+
+table, th, td {
+    border: 0px dotted grey;
+    border-collapse: collapse;
+  }

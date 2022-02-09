@@ -1,12 +1,46 @@
 {{#*inline "page"}}
-{{ file }}
-<table>
-  {{#each lines}}
-  <tr>
-    <td>{{this.mutations}}</td>
-    <td>{{{this.code}}}</td>
-  </tr>
-  {{/each}}
-</table> 
+
+<div >
+  <table class="source-table">
+    {{#each lines}}
+    <tr>
+      <td class="line-number line-class-{{this.css_line_class}}">
+        <a href="#{{this.line_number}}">{{this.line_number}}</a>
+      </td>
+      {{#if this.number_of_mutations}}
+      <td class="mutant-counter line-class-{{this.css_line_class}}">
+        <a href="#{{this.line_number}}" onclick="showMutant('mutants-line-{{@index}}')">{{this.number_of_mutations}}</a>
+      </td>
+      {{else}}
+      <td></td>
+      {{/if}}
+      <td class="line-class-{{this.css_line_class}}">{{{this.code}}}</td>
+    </tr>
+    
+    {{#each this.mutants}}
+    <tr class="mutants-line-{{@../index}}" style="display: none;">
+      <td></td>
+      <td></td>
+      <td>{{this.outcome}}: {{this.text}}</td>
+    </tr>
+    {{/each}}
+
+    {{/each}}
+  </table> 
+</div>
+
+<script>
+function showMutant(id) {
+  for (const e of document.getElementsByClassName(id)) {
+    if (e.style.display === "none") {
+      e.style.display = "table-row";
+    } else {
+      e.style.display = "none";
+    }
+  }
+  
+}
+</script>
+
 {{/inline}}
 {{> base}}

@@ -19,7 +19,7 @@ use operator::OperatorRegistry;
 use crate::cliarguments::{CLIArguments, CLICommand};
 use colored::*;
 use log::*;
-use reporter::Reporter;
+use reporter::{cli::CLIReporter, html::HTMLReporter, Reporter};
 use std::path::Path;
 
 use crate::{
@@ -99,11 +99,12 @@ fn mutate(
 
     match report_type {
         Output::Console => {
-            let cli_reporter = reporter::CLIReporter::new(config.report())?;
-            cli_reporter.report(&executed_mutants)?;
+            let reporter = CLIReporter::new(config.report())?;
+            reporter.report(&executed_mutants)?;
         }
         Output::HTML => {
-            reporter::generate_html(config, &executed_mutants, output_directory)?;
+            let reporter = HTMLReporter::new(config.report(), output_directory);
+            reporter.report(&executed_mutants)?;
         }
     }
 

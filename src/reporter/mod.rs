@@ -1,7 +1,6 @@
-mod cli;
+pub mod cli;
+pub mod html;
 mod rewriter;
-
-pub use cli::CLIReporter;
 
 use std::{
     collections::BTreeMap,
@@ -91,91 +90,6 @@ pub trait Reporter {
 type LineNumberMutantMap<'a> = BTreeMap<u64, Vec<&'a ExecutedMutant>>;
 type FileMutantMap<'a> = BTreeMap<String, LineNumberMutantMap<'a>>;
 
-#[derive(Serialize)]
-struct SourceLine {
-    mutations: usize,
-    code: String,
-}
-
-#[derive(Serialize)]
-struct MutatedFile {
-    name: String,
-    link: Option<String>,
-}
-
-pub fn generate_html(
-    _config: &Config,
-    executed_mutants: &[ExecutedMutant],
-    output_directory: &str,
-) -> Result<()> {
-    let file_mapping = map_mutants_to_files(executed_mutants);
-
-    let _ = std::fs::remove_dir_all(output_directory);
-    std::fs::create_dir(output_directory)?;
-
-    let template_engine = init_template_engine();
-
-    let mut mutated_files = Vec::new();
-    let context = SyntectContext::new("InspiredGitHub");
-
-    for (file, line_number_map) in file_mapping {
-        let link = match generate_source_lines(&file, &line_number_map, &context) {
-            Ok(lines) => {
-                // TODO: Error handling?
-                let output_file = generate_filename(&file);
-
-                // TODO: report directory
-                let writer =
-                    BufWriter::new(File::create(format!("{output_directory}/{output_file}"))?);
-
-                let data = BTreeMap::from([("file", to_json(&file)), ("lines", to_json(lines))]);
-
-                // TODO: Refactor error
-                template_engine
-                    .render_to_write("source_view", &data, writer)
-                    .unwrap();
-
-                Some(output_file)
-            }
-            Err(_) => {
-                log::warn!("Could not render file {file} - skipping");
-                None
-            }
-        };
-
-        mutated_files.push(MutatedFile { name: file, link });
-    }
-
-    let data = BTreeMap::from([("source_files", to_json(mutated_files))]);
-    let writer = BufWriter::new(File::create(format!("{output_directory}/index.html"))?);
-    // TODO: Refactor error
-    template_engine
-        .render_to_write("index", &data, writer)
-        .unwrap();
-
-    Ok(())
-}
-
-fn generate_filename(file: &str) -> String {
-    let s = Path::new(file).file_name().unwrap().to_str().unwrap();
-    let hash = md5::compute(s);
-    format!("{s}-{hash:?}.html")
-}
-
-fn init_template_engine() -> Handlebars<'static> {
-    let mut handlebars = Handlebars::new();
-    handlebars
-        .register_template_string("base", templates::BASE_TEMPLATE)
-        .unwrap();
-    handlebars
-        .register_template_string("source_view", templates::SOURCE_VIEW)
-        .unwrap();
-    handlebars
-        .register_template_string("index", templates::INDEX)
-        .unwrap();
-    handlebars
-}
-
 fn map_mutants_to_files(executed_mutants: &[ExecutedMutant]) -> FileMutantMap {
     let mut file_mapping = BTreeMap::new();
     for mutant in executed_mutants {
@@ -208,7 +122,7 @@ impl SyntectContext {
         let ts = syntect::highlighting::ThemeSet::load_defaults();
         let theme = ts.themes[theme_name].clone();
 
-        let syntax_set = syntect::parsing::SyntaxSet::load_defaults_nonewlines();
+        let syntax_set = syntect::parsing::SyntaxSet::load_defaults_newlines();
 
         Self { syntax_set, theme }
     }
@@ -261,48 +175,9 @@ impl<'a> SyntectFileContext<'a> {
     }
 }
 
-fn generate_source_lines(
-    file: &str,
-    mapping: &LineNumberMutantMap,
-    ctx: &SyntectContext,
-) -> Result<Vec<SourceLine>> {
-    let file_ctx = ctx.file_context(file);
-
-    let mut lines = Vec::new();
-
-    for (line_nr, line) in read_lines(file)?.enumerate() {
-        let line_nr = (line_nr + 1) as u64;
-        let line = line?;
-
-        let a = mapping.get(&line_nr).map_or(0, |v| v.len());
-        lines.push(SourceLine {
-            mutations: a,
-            code: file_ctx.generate_html(&line),
-        })
-    }
-    Ok(lines)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::Result;
-
-    #[test]
-    fn generate_source_lines_no_mutants() -> Result<()> {
-        let ctx = SyntectContext::default();
-        let result =
-            generate_source_lines("testdata/simple_add/simple_add.c", &BTreeMap::new(), &ctx)?;
-        assert_eq!(result.len(), 4);
-        Ok(())
-    }
-
-    #[test]
-    fn generate_source_lines_invalid_file() -> Result<()> {
-        let ctx = SyntectContext::default();
-        assert!(generate_source_lines("testdata/invalid_file.c", &BTreeMap::new(), &ctx).is_err());
-        Ok(())
-    }
 
     #[test]
     fn unknown_extension() -> Result<()> {
@@ -315,13 +190,6 @@ mod tests {
     fn no_extension() -> Result<()> {
         let ctx = SyntectContext::default();
         assert_eq!(&ctx.file_context("test").syntax.name, "Plain Text");
-        Ok(())
-    }
-
-    #[test]
-    fn generate_filename_for_simple_add() -> Result<()> {
-        let s = generate_filename("/home/lukas/Repos/wasmut/testdata/simple_add/simple_add.c");
-        assert_eq!(&s, "simple_add.c-fa92c051d002ff3e94998e6acfc1f707.html");
         Ok(())
     }
 
