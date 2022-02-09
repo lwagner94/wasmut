@@ -2,7 +2,7 @@ use crate::config::Config;
 
 use anyhow::{Context, Result};
 
-use regex::Regex;
+use regex::RegexSet;
 
 pub enum ExecutionPolicy {
     // Run the function until the execution limit is reached
@@ -15,38 +15,43 @@ pub enum ExecutionPolicy {
 }
 
 pub struct MutationPolicyBuilder {
-    allowed_functions: RegexListBuilder,
-    allowed_files: RegexListBuilder,
+    allowed_functions: Vec<String>,
+    allowed_files: Vec<String>,
     anything_allowed: bool,
 }
 
 pub struct MutationPolicy {
-    allowed_functions: RegexList,
-    allowed_files: RegexList,
+    allowed_functions: RegexSet,
+    allowed_files: RegexSet,
     anything_allowed: bool,
 }
 
 impl MutationPolicyBuilder {
-    pub fn allow_function<T: AsRef<str>>(self, name: T) -> Self {
+    pub fn allow_function<T: AsRef<str>>(mut self, name: T) -> Self {
+        self.allowed_functions.push(String::from(name.as_ref()));
         Self {
-            allowed_functions: self.allowed_functions.push(name),
             anything_allowed: false,
             ..self
         }
     }
 
-    pub fn allow_file<T: AsRef<str>>(self, name: T) -> Self {
+    pub fn allow_file<T: AsRef<str>>(mut self, name: T) -> Self {
+        self.allowed_files.push(String::from(name.as_ref()));
         Self {
-            allowed_files: self.allowed_files.push(name),
             anything_allowed: false,
             ..self
         }
     }
 
     pub fn build(self) -> Result<MutationPolicy> {
+        let allowed_functions = RegexSet::new(&self.allowed_functions)
+            .context("Could not build allowed_functions regex set")?;
+        let allowed_files = RegexSet::new(&self.allowed_files)
+            .context("Could not build allowed_files regex set")?;
+
         Ok(MutationPolicy {
-            allowed_functions: self.allowed_functions.build()?,
-            allowed_files: self.allowed_files.build()?,
+            allowed_functions,
+            allowed_files,
             anything_allowed: self.anything_allowed,
         })
     }
@@ -55,8 +60,8 @@ impl MutationPolicyBuilder {
 impl Default for MutationPolicyBuilder {
     fn default() -> Self {
         Self {
-            allowed_functions: RegexListBuilder::new(),
-            allowed_files: RegexListBuilder::new(),
+            allowed_functions: Default::default(),
+            allowed_files: Default::default(),
             anything_allowed: true,
         }
     }
@@ -82,11 +87,11 @@ impl MutationPolicy {
     }
 
     pub fn check_function<T: AsRef<str>>(&self, name: T) -> bool {
-        self.allowed_functions.any(name) || self.anything_allowed
+        self.anything_allowed || self.allowed_functions.is_match(name.as_ref())
     }
 
     pub fn check_file<T: AsRef<str>>(&self, name: T) -> bool {
-        self.allowed_files.any(name) || self.anything_allowed
+        self.anything_allowed || self.allowed_files.is_match(name.as_ref())
     }
 
     pub fn check<T: AsRef<str>>(&self, file: Option<T>, func: Option<T>) -> bool {
@@ -100,52 +105,10 @@ impl MutationPolicy {
 impl Default for MutationPolicy {
     fn default() -> Self {
         Self {
-            allowed_functions: Default::default(),
-            allowed_files: Default::default(),
+            allowed_functions: RegexSet::new(&[] as &[&str]).unwrap(),
+            allowed_files: RegexSet::new(&[] as &[&str]).unwrap(),
             anything_allowed: true,
         }
-    }
-}
-
-struct RegexListBuilder {
-    regexes: Vec<String>,
-}
-
-#[derive(Default)]
-struct RegexList {
-    regexes: Vec<Regex>,
-}
-
-impl RegexListBuilder {
-    fn new() -> Self {
-        Self {
-            regexes: Vec::new(),
-        }
-    }
-
-    fn push<T: AsRef<str>>(mut self, func_name: T) -> Self {
-        self.regexes.push(String::from(func_name.as_ref()));
-        self
-    }
-
-    fn build(self) -> Result<RegexList> {
-        let mut allowlist = Vec::new();
-
-        for allowed in self.regexes {
-            let regex = Regex::new(&allowed)
-                .with_context(|| format!("Failed to compile regex string \"{allowed}\""))?;
-            allowlist.push(regex);
-        }
-
-        Ok(RegexList { regexes: allowlist })
-    }
-}
-
-impl RegexList {
-    fn any<T: AsRef<str>>(&self, name: T) -> bool {
-        self.regexes
-            .iter()
-            .any(|regex| regex.is_match(name.as_ref()))
     }
 }
 
@@ -153,31 +116,6 @@ impl RegexList {
 mod tests {
     use super::*;
     use anyhow::Result;
-
-    #[test]
-    fn build_regexlist_trivial() -> Result<()> {
-        let regex_list = RegexListBuilder::new().push("test").build().unwrap();
-
-        assert!(regex_list.any("test"));
-        assert!(regex_list.any("invatestlid"));
-        assert!(!regex_list.any("invalid"));
-
-        Ok(())
-    }
-    #[test]
-    fn build_regexlist_multiple_regex() -> Result<()> {
-        let policy = RegexListBuilder::new()
-            .push("^test_")
-            .push("another")
-            .build()
-            .unwrap();
-
-        assert!(policy.any("test_func1"));
-        assert!(policy.any("test_func2"));
-        assert!(policy.any("another"));
-
-        Ok(())
-    }
 
     #[test]
     fn build_mutation_policy() -> Result<()> {

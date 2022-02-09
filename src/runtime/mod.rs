@@ -7,7 +7,6 @@ use anyhow::Result;
 
 use self::wasmer::WasmerRuntime;
 
-#[derive(Debug)]
 pub enum ExecutionResult {
     // Normal termination
     ProcessExit { exit_code: u32, execution_cost: u64 },
