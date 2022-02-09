@@ -1,5 +1,6 @@
 pub mod ops;
 
+use anyhow::Result;
 use ops::*;
 #[allow(unused_imports)]
 use parity_wasm::elements::Instruction::{self, *};
@@ -51,16 +52,18 @@ pub struct OperatorRegistry {
 }
 
 macro_rules! register_operator {
-    ($operator:ident, $v:ident, $enabled_ops:ident) => {
-        if $enabled_ops.contains(&$operator::name()) {
+    ($operator:ident, $v:ident, $regex_set:ident) => {
+        if $regex_set.is_match(&$operator::name()) {
             $v.push($operator::factory());
         }
     };
 }
 
 impl OperatorRegistry {
-    pub fn new(enabled_ops: &[&str]) -> Self {
+    pub fn new(enabled_ops: &[&str]) -> Result<Self> {
         let mut operators = Vec::new();
+
+        let enabled_ops = regex::RegexSet::new(enabled_ops).unwrap();
 
         register_operator!(BinaryOperatorSubToAdd, operators, enabled_ops);
         register_operator!(BinaryOperatorAddToSub, operators, enabled_ops);
@@ -107,7 +110,7 @@ impl OperatorRegistry {
         register_operator!(CallRemoveVoidCall, operators, enabled_ops);
         register_operator!(CallRemoveScalarCall, operators, enabled_ops);
 
-        Self { operators }
+        Ok(Self { operators })
     }
 
     pub fn from_instruction(
@@ -124,44 +127,15 @@ impl OperatorRegistry {
 
         results
     }
+
+    pub fn number_of_operators(&self) -> usize {
+        self.operators.len()
+    }
 }
 
 impl Default for OperatorRegistry {
     fn default() -> Self {
-        let operators = vec![
-            BinaryOperatorSubToAdd::factory(),
-            BinaryOperatorAddToSub::factory(),
-            BinaryOperatorMulToDivS::factory(),
-            BinaryOperatorMulToDivU::factory(),
-            BinaryOperatorDivXToMul::factory(),
-            BinaryOperatorShlToShrS::factory(),
-            BinaryOperatorShlToShrU::factory(),
-            BinaryOperatorShrXToShl::factory(),
-            BinaryOperatorRemToDiv::factory(),
-            BinaryOperatorDivToRem::factory(),
-            BinaryOperatorAndToOr::factory(),
-            BinaryOperatorOrToAnd::factory(),
-            BinaryOperatorXorToOr::factory(),
-            BinaryOperatorOrToXor::factory(),
-            BinaryOperatorRotlToRotr::factory(),
-            BinaryOperatorRotrToRotl::factory(),
-            UnaryOperatorNegToNop::factory(),
-            RelationalOperatorEqToNe::factory(),
-            RelationalOperatorNeToEq::factory(),
-            RelationalOperatorLeToGt::factory(),
-            RelationalOperatorLeToLt::factory(),
-            RelationalOperatorLtToGe::factory(),
-            RelationalOperatorLtToLe::factory(),
-            RelationalOperatorGeToGt::factory(),
-            RelationalOperatorGeToLt::factory(),
-            RelationalOperatorGtToGe::factory(),
-            RelationalOperatorGtToLe::factory(),
-            ConstReplaceZero::factory(),
-            ConstReplaceNonZero::factory(),
-            CallRemoveVoidCall::factory(),
-            CallRemoveScalarCall::factory(),
-        ];
-        Self { operators }
+        Self::new(&[""]).unwrap()
     }
 }
 
@@ -179,7 +153,7 @@ mod tests {
                 #[test]
                 fn test_name() {
                     let enabled_operator = stringify!($operator);
-                    let registry = OperatorRegistry::new([enabled_operator].as_slice());
+                    let registry = OperatorRegistry::new([enabled_operator].as_slice()).unwrap();
                     let context = Default::default();
 
                     let ops = registry.from_instruction(&$original, &context);
@@ -206,7 +180,7 @@ mod tests {
                 #[allow(non_snake_case)]
                 #[test]
                 fn test_name() {
-                    let registry = OperatorRegistry::new([].as_slice());
+                    let registry = OperatorRegistry::new([].as_slice()).unwrap();
                     let instr = $original;
                     let context = Default::default();
                     let ops = registry.from_instruction(&instr, &context);
@@ -223,7 +197,7 @@ mod tests {
                 #[test]
                 fn test_name() {
                     let enabled_operator = stringify!($operator);
-                    let registry = OperatorRegistry::new([enabled_operator].as_slice());
+                    let registry = OperatorRegistry::new([enabled_operator].as_slice()).unwrap();
                     let context = Default::default();
                     let ops = registry.from_instruction(&$original, &context);
                     assert_eq!(ops.len(), 1);
@@ -241,7 +215,7 @@ mod tests {
                 #[allow(non_snake_case)]
                 #[test]
                 fn test_name() {
-                    let registry = OperatorRegistry::new([].as_slice());
+                    let registry = OperatorRegistry::new([].as_slice()).unwrap();
                     let instr = $original;
                     let context = Default::default();
                     let ops = registry.from_instruction(&instr, &context);
@@ -409,7 +383,7 @@ mod tests {
 
     #[test]
     fn call_remove_void_call_enabled() {
-        let registry = OperatorRegistry::new(["call_remove_void_call"].as_slice());
+        let registry = OperatorRegistry::new(["call_remove_void_call"].as_slice()).unwrap();
         let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningVoid {
             index: 0,
             params: 2,
@@ -437,7 +411,7 @@ mod tests {
 
     #[test]
     fn call_remove_void_call_disabled() {
-        let registry = OperatorRegistry::new([].as_slice());
+        let registry = OperatorRegistry::new([].as_slice()).unwrap();
         let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningVoid {
             index: 0,
             params: 2,
@@ -453,7 +427,7 @@ mod tests {
                 #[test]
 
                 fn test_name() {
-                    let registry = OperatorRegistry::new(["call_remove_scalar_call"].as_slice());
+                    let registry = OperatorRegistry::new(["call_remove_scalar_call"].as_slice()).unwrap();
                     let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningScalar {
                         index: 0,
                         params: 2,
@@ -485,7 +459,7 @@ mod tests {
                 #[allow(non_snake_case)]
                 #[test]
                 fn test_name() {
-                    let registry = OperatorRegistry::new([].as_slice());
+                    let registry = OperatorRegistry::new([].as_slice()).unwrap();
                     let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningScalar {
                         index: 0,
                         params: 2,
@@ -502,4 +476,36 @@ mod tests {
     generate_remove_scalar_call_test!(I64, I64Const(42));
     generate_remove_scalar_call_test!(F32, F32Const(42f32.to_bits()));
     generate_remove_scalar_call_test!(F64, F64Const(42f64.to_bits()));
+
+    #[test]
+    fn registry_correct_number_of_ops() {
+        assert_eq!(
+            OperatorRegistry::new(&["binop_mul_to_div"])
+                .unwrap()
+                .number_of_operators(),
+            2
+        );
+        assert_eq!(
+            OperatorRegistry::new(&["binop_shl_to_shr"])
+                .unwrap()
+                .number_of_operators(),
+            2
+        );
+        assert_eq!(
+            OperatorRegistry::new(&["binop_"])
+                .unwrap()
+                .number_of_operators(),
+            16
+        );
+        assert_eq!(
+            OperatorRegistry::new(&["const_replace_"])
+                .unwrap()
+                .number_of_operators(),
+            2
+        );
+        assert_eq!(
+            OperatorRegistry::new(&[""]).unwrap().number_of_operators(),
+            31
+        );
+    }
 }

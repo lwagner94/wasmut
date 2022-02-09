@@ -14,17 +14,25 @@ pub struct Mutation {
 
 pub struct MutationEngine {
     mutation_policy: MutationPolicy,
+    enabled_operators: Vec<String>,
 }
 
 impl MutationEngine {
     pub fn new(config: &Config) -> Result<Self> {
         Ok(Self {
             mutation_policy: MutationPolicy::from_config(config)?,
+            enabled_operators: config.operators().enabled_operators(),
         })
     }
 
     pub fn discover_mutation_positions(&self, module: &WasmModule) -> Result<Vec<Mutation>> {
-        let registry = OperatorRegistry::default();
+        let a = self
+            .enabled_operators
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+
+        let registry = OperatorRegistry::new(&a)?;
 
         let r = &registry;
 
@@ -87,6 +95,21 @@ mod tests {
         let original_bytecode: Vec<u8> = module.try_into().unwrap();
 
         assert_ne!(mutated_bytecode, original_bytecode);
+        Ok(())
+    }
+
+    #[test]
+    fn test_enable_only_some_operators() -> Result<()> {
+        fn check_number_of_mutants(config: &str) -> usize {
+            let module = WasmModule::from_file("testdata/count_words/test.wasm").unwrap();
+            let config = Config::parse_file(format!("testdata/count_words/{config}")).unwrap();
+            let engine = MutationEngine::new(&config).unwrap();
+            engine.discover_mutation_positions(&module).unwrap().len()
+        }
+
+        assert_eq!(check_number_of_mutants("wasmut_call.toml"), 7);
+        assert_eq!(check_number_of_mutants("wasmut_relops.toml"), 1);
+        assert_eq!(check_number_of_mutants("wasmut.toml"), 23);
         Ok(())
     }
 }

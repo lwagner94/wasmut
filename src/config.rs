@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::{defaults::TIMEOUT_MULTIPLIER, templates};
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize, Default, Clone)]
+#[derive(Deserialize, Default)]
 pub struct FilterConfig {
     allowed_files: Option<Vec<String>>,
     allowed_functions: Option<Vec<String>>,
@@ -20,7 +20,7 @@ impl FilterConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Deserialize, Default)]
 pub struct EngineConfig {
     timeout_multiplier: Option<f64>,
     map_dirs: Option<Vec<(String, String)>>,
@@ -42,7 +42,7 @@ impl EngineConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Deserialize, Default)]
 pub struct ReportConfig {
     path_rewrite: Option<(String, String)>,
 }
@@ -54,12 +54,25 @@ impl ReportConfig {
             .map(|(regex, replacement)| (regex.as_ref(), replacement.as_ref()))
     }
 }
+#[derive(Deserialize, Default)]
+pub struct OperatorConfig {
+    enabled_operators: Option<Vec<String>>,
+}
 
-#[derive(Debug, Deserialize, Clone)]
+impl OperatorConfig {
+    pub fn enabled_operators(&self) -> Vec<String> {
+        self.enabled_operators
+            .clone()
+            .unwrap_or_else(|| vec![String::new()])
+    }
+}
+
+#[derive(Deserialize)]
 pub struct Config {
     engine: Option<EngineConfig>,
     filter: Option<FilterConfig>,
     report: Option<ReportConfig>,
+    operators: Option<OperatorConfig>,
 }
 
 impl Default for Config {
@@ -68,6 +81,7 @@ impl Default for Config {
             engine: Some(Default::default()),
             filter: Some(Default::default()),
             report: Some(Default::default()),
+            operators: Some(Default::default()),
         }
     }
 }
@@ -103,6 +117,14 @@ impl Config {
         if config.filter.is_none() {
             config.filter = Some(Default::default());
         }
+
+        if config.report.is_none() {
+            config.report = Some(Default::default());
+        }
+
+        if config.operators.is_none() {
+            config.operators = Some(Default::default());
+        }
         Ok(config)
     }
 
@@ -117,6 +139,10 @@ impl Config {
     pub fn report(&self) -> &ReportConfig {
         self.report.as_ref().unwrap()
     }
+
+    pub fn operators(&self) -> &OperatorConfig {
+        self.operators.as_ref().unwrap()
+    }
 }
 
 #[cfg(test)]
@@ -126,37 +152,37 @@ mod tests {
 
     #[test]
     fn filters() -> Result<()> {
-        let filter: FilterConfig = toml::from_str(
+        let config = Config::parse(
             r#"
-
-        allowed_files = ["src/", "test/"]
-        allowed_functions = ["simple_rust", "test"]
-    "#,
+            [filter]
+            allowed_files = ["src/", "test/"]
+            allowed_functions = ["simple_rust", "test"]
+            "#,
         )?;
 
         assert_eq!(
-            filter.allowed_files,
-            Some(vec![String::from("src/"), String::from("test/")])
+            config.filter().allowed_files(),
+            Some(&vec![String::from("src/"), String::from("test/")])
         );
         assert_eq!(
-            filter.allowed_functions,
-            Some(vec![String::from("simple_rust"), String::from("test")])
+            config.filter().allowed_functions(),
+            Some(&vec![String::from("simple_rust"), String::from("test")])
         );
         Ok(())
     }
 
     #[test]
     fn engine_config() -> Result<()> {
-        let engine: EngineConfig = toml::from_str(
+        let config = Config::parse(
             r#"
-        timeout_multiplier = 2
-        map_dirs = [["a/foo", "b/bar"], ["abcd", "abcd"]]
-
-    "#,
+            [engine]
+            timeout_multiplier = 10
+            map_dirs = [["a/foo", "b/bar"], ["abcd", "abcd"]]
+            "#,
         )?;
-        assert_eq!(engine.timeout_multiplier, Some(2.0));
+        assert_eq!(config.engine().timeout_multiplier(), 10.0);
         assert_eq!(
-            engine.map_dirs(),
+            config.engine().map_dirs(),
             [
                 ("a/foo".into(), "b/bar".into()),
                 ("abcd".into(), "abcd".into())
@@ -166,27 +192,28 @@ mod tests {
     }
 
     #[test]
-    fn defaultengine_config() -> Result<()> {
-        let engine: EngineConfig = toml::from_str(
+    fn operator_config() -> Result<()> {
+        let config = Config::parse(
             r#"
+            [operators]
+            enabled_operators = ["relop", "unop"]
+
             "#,
         )?;
-        assert_eq!(engine.timeout_multiplier(), 2.0);
-        assert_eq!(engine.map_dirs(), []);
+        let expected: Vec<String> = vec!["relop".into(), "unop".into()];
+        assert_eq!(config.operators().enabled_operators(), expected);
         Ok(())
     }
 
     #[test]
     fn report_config() -> Result<()> {
-        let module: ReportConfig = toml::from_str(
+        let config = Config::parse(
             r#"
-        path_rewrite = ["foo", "bar"]
-    "#,
+            [report]
+            path_rewrite = ["foo", "bar"]
+            "#,
         )?;
-        assert_eq!(
-            module.path_rewrite,
-            Some((String::from("foo"), String::from("bar")))
-        );
+        assert_eq!(config.report().path_rewrite(), Some(("foo", "bar")));
         Ok(())
     }
 
@@ -206,6 +233,24 @@ mod tests {
         Config::save_default_config(&file_path)?;
 
         assert!(Config::parse_file(&file_path).is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn default_config() -> Result<()> {
+        let config = Config::parse(
+            r#"
+            "#,
+        )?;
+        assert_eq!(config.engine().timeout_multiplier(), 2.0);
+        assert_eq!(config.engine().map_dirs(), []);
+        assert_eq!(config.filter().allowed_files(), None);
+        assert_eq!(config.filter().allowed_functions(), None);
+        assert_eq!(config.report().path_rewrite(), None);
+        assert_eq!(
+            config.operators().enabled_operators(),
+            vec![String::from("")]
+        );
         Ok(())
     }
 }
