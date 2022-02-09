@@ -19,12 +19,37 @@ impl Executor {
         }
     }
 
-    pub fn execute(
+    pub fn execute(&self, module: &WasmModule) -> Result<()> {
+        // TODO: should the runtime own the module? If not, we can remove the clone here.
+        let mut runtime = runtime::create_runtime(module.clone(), false)?;
+
+        // TODO: Code duplication?
+        match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
+            ExecutionResult::ProcessExit {
+                exit_code,
+                execution_cost,
+            } => {
+                if exit_code == 0 {
+                    log::info!("Module executed in {execution_cost} cycles");
+                } else {
+                    bail!("Module returned exit code {exit_code}");
+                }
+            }
+            ExecutionResult::Timeout => {
+                panic!("Execution limit exceeded even though we set no limit!")
+            }
+            ExecutionResult::Error => bail!("Module failed to execute"),
+        };
+
+        Ok(())
+    }
+
+    pub fn execute_mutants(
         &self,
         module: &WasmModule,
         mutations: &[Mutation],
     ) -> Result<Vec<ExecutionResult>> {
-        let mut runtime = runtime::create_runtime(module.clone())?;
+        let mut runtime = runtime::create_runtime(module.clone(), true)?;
 
         let execution_cost = match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
             ExecutionResult::ProcessExit {
@@ -64,7 +89,7 @@ impl Executor {
 
                 let policy = ExecutionPolicy::RunUntilLimit { limit };
 
-                let mut runtime = runtime::create_runtime(module).unwrap();
+                let mut runtime = runtime::create_runtime(module, true).unwrap();
                 runtime.call_test_function(policy).unwrap()
             })
             .collect();
@@ -80,29 +105,29 @@ mod tests {
 
     use super::*;
 
-    fn execute_module(test_case: &str, mutations: &[Mutation]) -> Result<Vec<ExecutionResult>> {
+    fn mutate_module(test_case: &str, mutations: &[Mutation]) -> Result<Vec<ExecutionResult>> {
         let module = WasmModule::from_file(&format!("testdata/{test_case}/test.wasm"))?;
         let executor = Executor::new(&Config::default());
-        executor.execute(&module, mutations)
+        executor.execute_mutants(&module, mutations)
     }
 
     #[test]
     fn original_module_nonzero_exit() -> Result<()> {
-        let result = execute_module("nonzero_exit", &[]);
+        let result = mutate_module("nonzero_exit", &[]);
         assert!(result.is_err());
         Ok(())
     }
 
     #[test]
     fn original_module_rust_fail() -> Result<()> {
-        let result = execute_module("rust_fail", &[]);
+        let result = mutate_module("rust_fail", &[]);
         assert!(result.is_err());
         Ok(())
     }
 
     #[test]
     fn no_mutants() -> Result<()> {
-        let result = execute_module("simple_add", &[]);
+        let result = mutate_module("simple_add", &[]);
         assert!(matches!(result, Ok(..)));
         Ok(())
     }
@@ -119,7 +144,7 @@ mod tests {
             )),
         }];
 
-        let result = execute_module("simple_add", &mutations)?;
+        let result = mutate_module("simple_add", &mutations)?;
         assert!(matches!(
             result[0],
             ExecutionResult::ProcessExit { exit_code: 1, .. }

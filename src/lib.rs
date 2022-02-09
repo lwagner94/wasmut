@@ -71,7 +71,7 @@ fn mutate(
     //dbg!(&mutations);
 
     let executor = Executor::new(config);
-    let results = executor.execute(&module, &mutations)?;
+    let results = executor.execute_mutants(&module, &mutations)?;
 
     // dbg!(outcomes);
 
@@ -94,6 +94,13 @@ fn new_config(path: Option<String>) -> Result<()> {
     let path = path.unwrap_or_else(|| "wasmut.toml".into());
     Config::save_default_config(&path)?;
     info!("Created new configuration file {path}");
+    Ok(())
+}
+
+fn run(wasmfile: &str, config: &Config) -> Result<()> {
+    let module = WasmModule::from_file(wasmfile)?;
+    let executor = Executor::new(config);
+    executor.execute(&module)?;
     Ok(())
 }
 
@@ -171,14 +178,20 @@ pub fn run_main(cli: CLIArguments) -> Result<()> {
             report,
             output,
         } => {
-            dbg!(&report);
-            dbg!(&output);
             let config = load_config(config, &wasmfile, config_samedir)?;
             init_rayon(threads);
             mutate(&wasmfile, &config, &report, &output)?;
         }
         CLICommand::NewConfig { path } => {
             new_config(path)?;
+        }
+        CLICommand::Run {
+            config,
+            config_samedir,
+            wasmfile,
+        } => {
+            let config = load_config(config, &wasmfile, config_samedir)?;
+            run(&wasmfile, &config)?;
         }
     }
 
@@ -301,5 +314,31 @@ mod tests {
         }
 
         assert_eq!(hits, 2);
+    }
+
+    #[test]
+    fn test_run_zero_exit() {
+        let module_path = Path::new("testdata/simple_add/test.wasm");
+
+        let args = CLIArguments::parse_args_from(vec![
+            "wasmut",
+            "run",
+            "-C",
+            module_path.to_str().unwrap(),
+        ]);
+        assert!(run_main(args).is_ok());
+    }
+
+    #[test]
+    fn test_run_nonzero_exit() {
+        let module_path = Path::new("testdata/nonzero_exit/test.wasm");
+
+        let args = CLIArguments::parse_args_from(vec![
+            "wasmut",
+            "run",
+            "-C",
+            module_path.to_str().unwrap(),
+        ]);
+        assert!(run_main(args).is_err());
     }
 }

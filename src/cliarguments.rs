@@ -61,9 +61,24 @@ pub enum CLICommand {
         /// Path to the wasm module
         wasmfile: String,
     },
+    /// Create new configuration file
     NewConfig {
         /// Path to the new configuration file
         path: Option<String>,
+    },
+
+    /// Run module without any mutations
+    Run {
+        /// Path to wasmut.toml configuration
+        #[clap(short, long)]
+        config: Option<String>,
+
+        /// Attempt to load wasmut.toml from the same directory as the wasm module
+        #[clap(short = 'C', long)]
+        config_samedir: bool,
+
+        /// Path to the wasm module
+        wasmfile: String,
     },
 }
 

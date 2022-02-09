@@ -22,7 +22,7 @@ pub struct WasmerRuntime {
 }
 
 impl Runtime for WasmerRuntime {
-    fn new(module: WasmModule) -> Result<Self> {
+    fn new(module: WasmModule, discard_output: bool) -> Result<Self> {
         use wasmer::{Instance, Module, Store};
 
         let cost_function = |_: &Operator| -> u64 { 1 };
@@ -35,12 +35,15 @@ impl Runtime for WasmerRuntime {
         let bytecode: Vec<u8> = module.try_into()?;
         let module = Module::new(&store, &bytecode).context("Failed to create wasmer module")?;
 
-        let stdout = Box::new(Pipe::new());
-        let stderr = Box::new(Pipe::new());
+        let mut state_builder = WasiState::new("command-name");
 
-        let mut wasi_env = WasiState::new("command-name")
-            .stdout(stdout)
-            .stderr(stderr)
+        if discard_output {
+            let stdout = Box::new(Pipe::new());
+            let stderr = Box::new(Pipe::new());
+            state_builder.stdout(stdout).stderr(stderr);
+        }
+
+        let mut wasi_env = state_builder
             .finalize()
             .context("Failed to create wasmer-wasi env")?;
 
