@@ -26,13 +26,13 @@ impl MutationEngine {
     }
 
     pub fn discover_mutation_positions(&self, module: &WasmModule) -> Result<Vec<Mutation>> {
-        let a = self
+        let ops = self
             .enabled_operators
             .iter()
             .map(String::as_str)
             .collect::<Vec<_>>();
 
-        let registry = OperatorRegistry::new(&a)?;
+        let registry = OperatorRegistry::new(&ops)?;
 
         let r = &registry;
 

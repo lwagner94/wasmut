@@ -47,70 +47,78 @@ impl InstructionContext {
 type FactoryFunction =
     fn(&Instruction, &InstructionContext) -> Option<Box<dyn InstructionReplacement>>;
 
+#[derive(Default)]
 pub struct OperatorRegistry {
     operators: Vec<FactoryFunction>,
+    enabled_operator_names: Vec<String>,
+    disabled_operator_names: Vec<String>,
 }
 
 macro_rules! register_operator {
     ($operator:ident, $v:ident, $regex_set:ident) => {
         if $regex_set.is_match(&$operator::name()) {
-            $v.push($operator::factory());
+            $v.operators.push($operator::factory());
+            $v.enabled_operator_names
+                .push(String::from($operator::name()))
+        } else {
+            $v.disabled_operator_names
+                .push(String::from($operator::name()))
         }
     };
 }
 
 impl OperatorRegistry {
     pub fn new(enabled_ops: &[&str]) -> Result<Self> {
-        let mut operators = Vec::new();
+        let mut registry: OperatorRegistry = Default::default();
 
-        let enabled_ops = regex::RegexSet::new(enabled_ops).unwrap();
+        let regex_set = regex::RegexSet::new(enabled_ops).unwrap();
 
-        register_operator!(BinaryOperatorSubToAdd, operators, enabled_ops);
-        register_operator!(BinaryOperatorAddToSub, operators, enabled_ops);
+        register_operator!(BinaryOperatorSubToAdd, registry, regex_set);
+        register_operator!(BinaryOperatorAddToSub, registry, regex_set);
 
-        register_operator!(BinaryOperatorMulToDivS, operators, enabled_ops);
-        register_operator!(BinaryOperatorMulToDivU, operators, enabled_ops);
-        register_operator!(BinaryOperatorDivXToMul, operators, enabled_ops);
+        register_operator!(BinaryOperatorMulToDivS, registry, regex_set);
+        register_operator!(BinaryOperatorMulToDivU, registry, regex_set);
+        register_operator!(BinaryOperatorDivXToMul, registry, regex_set);
 
-        register_operator!(BinaryOperatorShlToShrS, operators, enabled_ops);
-        register_operator!(BinaryOperatorShlToShrU, operators, enabled_ops);
-        register_operator!(BinaryOperatorShrXToShl, operators, enabled_ops);
+        register_operator!(BinaryOperatorShlToShrS, registry, regex_set);
+        register_operator!(BinaryOperatorShlToShrU, registry, regex_set);
+        register_operator!(BinaryOperatorShrXToShl, registry, regex_set);
 
-        register_operator!(BinaryOperatorRemToDiv, operators, enabled_ops);
-        register_operator!(BinaryOperatorDivToRem, operators, enabled_ops);
+        register_operator!(BinaryOperatorRemToDiv, registry, regex_set);
+        register_operator!(BinaryOperatorDivToRem, registry, regex_set);
 
-        register_operator!(BinaryOperatorAndToOr, operators, enabled_ops);
-        register_operator!(BinaryOperatorOrToAnd, operators, enabled_ops);
+        register_operator!(BinaryOperatorAndToOr, registry, regex_set);
+        register_operator!(BinaryOperatorOrToAnd, registry, regex_set);
 
-        register_operator!(BinaryOperatorXorToOr, operators, enabled_ops);
-        register_operator!(BinaryOperatorOrToXor, operators, enabled_ops);
+        register_operator!(BinaryOperatorXorToOr, registry, regex_set);
+        register_operator!(BinaryOperatorOrToXor, registry, regex_set);
 
-        register_operator!(BinaryOperatorRotlToRotr, operators, enabled_ops);
-        register_operator!(BinaryOperatorRotrToRotl, operators, enabled_ops);
+        register_operator!(BinaryOperatorRotlToRotr, registry, regex_set);
+        register_operator!(BinaryOperatorRotrToRotl, registry, regex_set);
 
-        register_operator!(UnaryOperatorNegToNop, operators, enabled_ops);
+        register_operator!(UnaryOperatorNegToNop, registry, regex_set);
 
-        register_operator!(RelationalOperatorEqToNe, operators, enabled_ops);
-        register_operator!(RelationalOperatorNeToEq, operators, enabled_ops);
+        register_operator!(RelationalOperatorEqToNe, registry, regex_set);
+        register_operator!(RelationalOperatorNeToEq, registry, regex_set);
 
-        register_operator!(RelationalOperatorLeToGt, operators, enabled_ops);
-        register_operator!(RelationalOperatorLeToLt, operators, enabled_ops);
+        register_operator!(RelationalOperatorLeToGt, registry, regex_set);
+        register_operator!(RelationalOperatorLeToLt, registry, regex_set);
 
-        register_operator!(RelationalOperatorLtToGe, operators, enabled_ops);
-        register_operator!(RelationalOperatorLtToLe, operators, enabled_ops);
+        register_operator!(RelationalOperatorLtToGe, registry, regex_set);
+        register_operator!(RelationalOperatorLtToLe, registry, regex_set);
 
-        register_operator!(RelationalOperatorGeToGt, operators, enabled_ops);
-        register_operator!(RelationalOperatorGeToLt, operators, enabled_ops);
+        register_operator!(RelationalOperatorGeToGt, registry, regex_set);
+        register_operator!(RelationalOperatorGeToLt, registry, regex_set);
 
-        register_operator!(RelationalOperatorGtToGe, operators, enabled_ops);
-        register_operator!(RelationalOperatorGtToLe, operators, enabled_ops);
+        register_operator!(RelationalOperatorGtToGe, registry, regex_set);
+        register_operator!(RelationalOperatorGtToLe, registry, regex_set);
 
-        register_operator!(ConstReplaceZero, operators, enabled_ops);
-        register_operator!(ConstReplaceNonZero, operators, enabled_ops);
-        register_operator!(CallRemoveVoidCall, operators, enabled_ops);
-        register_operator!(CallRemoveScalarCall, operators, enabled_ops);
+        register_operator!(ConstReplaceZero, registry, regex_set);
+        register_operator!(ConstReplaceNonZero, registry, regex_set);
+        register_operator!(CallRemoveVoidCall, registry, regex_set);
+        register_operator!(CallRemoveScalarCall, registry, regex_set);
 
-        Ok(Self { operators })
+        Ok(registry)
     }
 
     pub fn from_instruction(
@@ -131,11 +139,13 @@ impl OperatorRegistry {
     pub fn number_of_operators(&self) -> usize {
         self.operators.len()
     }
-}
 
-impl Default for OperatorRegistry {
-    fn default() -> Self {
-        Self::new(&[""]).unwrap()
+    pub fn enabled_operators(&self) -> &[String] {
+        &self.enabled_operator_names
+    }
+
+    pub fn disabled_operators(&self) -> &[String] {
+        &self.disabled_operator_names
     }
 }
 

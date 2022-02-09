@@ -14,6 +14,7 @@ pub mod wasmmodule;
 
 use anyhow::{bail, Context, Result};
 use cliarguments::Output;
+use operator::OperatorRegistry;
 
 use crate::cliarguments::{CLIArguments, CLICommand};
 use colored::*;
@@ -53,6 +54,25 @@ fn list_files(wasmfile: &str, config: &Config) -> Result<()> {
             "denied:  ".red()
         };
         output::output_string(format!("{check_result_str}{file}\n"));
+    }
+
+    Ok(())
+}
+
+fn list_operators(config: &Config) -> Result<()> {
+    let enabled_ops = config.operators().enabled_operators();
+    let ops = enabled_ops.iter().map(String::as_str).collect::<Vec<_>>();
+
+    let registry = OperatorRegistry::new(&ops)?;
+
+    for op_name in registry.enabled_operators() {
+        let check_result_str = "enabled:  ".green();
+        output::output_string(format!("{check_result_str}{op_name}\n"));
+    }
+
+    for op_name in registry.disabled_operators() {
+        let check_result_str = "disabled: ".red();
+        output::output_string(format!("{check_result_str}{op_name}\n"));
     }
 
     Ok(())
@@ -104,7 +124,11 @@ fn run(wasmfile: &str, config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn load_config(config_path: Option<String>, module: &str, config_samedir: bool) -> Result<Config> {
+fn load_config(
+    config_path: Option<&str>,
+    module: Option<&str>,
+    config_samedir: bool,
+) -> Result<Config> {
     if config_path.is_some() && config_samedir {
         bail!("Cannot use --config/-c and --config-same-dir/-C at the same time!");
     }
@@ -116,7 +140,13 @@ fn load_config(config_path: Option<String>, module: &str, config_samedir: bool) 
     } else if config_samedir {
         // The user has specified the -C option, indicating that wasmut should look for
         // a configuration file in the same directory as the module
-        let module_directory = Path::new(module)
+        if module.is_none() {
+            bail!("Cannot use --config-same-dir/-C without specifying a module!");
+        }
+
+        let module = module.unwrap();
+
+        let module_directory = Path::new(&module)
             .parent()
             .context("wasmmodule has no parent path")?;
         let config_path = module_directory.join("wasmut.toml");
@@ -159,7 +189,7 @@ pub fn run_main(cli: CLIArguments) -> Result<()> {
             wasmfile,
             config_samedir,
         } => {
-            let config = load_config(config, &wasmfile, config_samedir)?;
+            let config = load_config(config.as_deref(), Some(&wasmfile), config_samedir)?;
             list_functions(&wasmfile, &config)?;
         }
         CLICommand::ListFiles {
@@ -167,7 +197,7 @@ pub fn run_main(cli: CLIArguments) -> Result<()> {
             wasmfile,
             config_samedir,
         } => {
-            let config = load_config(config, &wasmfile, config_samedir)?;
+            let config = load_config(config.as_deref(), Some(&wasmfile), config_samedir)?;
             list_files(&wasmfile, &config)?;
         }
         CLICommand::Mutate {
@@ -178,7 +208,7 @@ pub fn run_main(cli: CLIArguments) -> Result<()> {
             report,
             output,
         } => {
-            let config = load_config(config, &wasmfile, config_samedir)?;
+            let config = load_config(config.as_deref(), Some(&wasmfile), config_samedir)?;
             init_rayon(threads);
             mutate(&wasmfile, &config, &report, &output)?;
         }
@@ -190,8 +220,16 @@ pub fn run_main(cli: CLIArguments) -> Result<()> {
             config_samedir,
             wasmfile,
         } => {
-            let config = load_config(config, &wasmfile, config_samedir)?;
+            let config = load_config(config.as_deref(), Some(&wasmfile), config_samedir)?;
             run(&wasmfile, &config)?;
+        }
+        CLICommand::ListOperators {
+            config,
+            config_samedir,
+            wasmfile,
+        } => {
+            let config = load_config(config.as_deref(), wasmfile.as_deref(), config_samedir)?;
+            list_operators(&config)?;
         }
     }
 
@@ -344,5 +382,38 @@ mod tests {
     fn test_run_count_words() {
         // Test the map_dirs parameter
         assert!(run_module("count_words").is_ok());
+    }
+
+    #[test]
+    fn test_list_operators() {
+        let config_path = Path::new("testdata/count_words/wasmut_call.toml");
+
+        let args = CLIArguments::parse_args_from(vec![
+            "wasmut",
+            "list-operators",
+            "-c",
+            config_path.to_str().unwrap(),
+        ]);
+        output::clear_output();
+        assert!(run_main(args).is_ok());
+
+        let command_output = output::get_output();
+        let lines = command_output.split('\n');
+
+        let mut counted_operators = 0;
+
+        for line in lines {
+            if line.contains("enabled") && (line.contains("call_"))
+                || (line.contains("disabled")
+                    && (line.contains("binop_")
+                        || line.contains("unop_")
+                        || line.contains("relop")
+                        || line.contains("const_")))
+            {
+                counted_operators += 1;
+            };
+        }
+
+        assert_eq!(counted_operators, 31);
     }
 }

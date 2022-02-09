@@ -80,6 +80,20 @@ pub enum CLICommand {
         /// Path to the wasm module
         wasmfile: String,
     },
+
+    /// List all available mutation operators
+    ListOperators {
+        /// Path to wasmut.toml configuration
+        #[clap(short, long)]
+        config: Option<String>,
+
+        /// Attempt to load wasmut.toml from the same directory as the wasm module
+        #[clap(short = 'C', long)]
+        config_samedir: bool,
+
+        /// Path to the wasm module
+        wasmfile: Option<String>,
+    },
 }
 
 #[derive(ArgEnum, Clone, Debug)]
