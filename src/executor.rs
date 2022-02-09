@@ -8,20 +8,22 @@ use anyhow::{bail, Result};
 
 use rayon::prelude::*;
 
-pub struct Executor {
+pub struct Executor<'a> {
     timeout_multiplier: f64,
+    mapped_dirs: &'a [(String, String)],
 }
 
-impl Executor {
-    pub fn new(config: &Config) -> Self {
+impl<'a> Executor<'a> {
+    pub fn new(config: &'a Config) -> Self {
         Executor {
             timeout_multiplier: config.engine().timeout_multiplier(),
+            mapped_dirs: config.engine().map_dirs(),
         }
     }
 
     pub fn execute(&self, module: &WasmModule) -> Result<()> {
         // TODO: should the runtime own the module? If not, we can remove the clone here.
-        let mut runtime = runtime::create_runtime(module.clone(), false)?;
+        let mut runtime = runtime::create_runtime(module.clone(), false, self.mapped_dirs)?;
 
         // TODO: Code duplication?
         match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
@@ -49,7 +51,7 @@ impl Executor {
         module: &WasmModule,
         mutations: &[Mutation],
     ) -> Result<Vec<ExecutionResult>> {
-        let mut runtime = runtime::create_runtime(module.clone(), true)?;
+        let mut runtime = runtime::create_runtime(module.clone(), true, self.mapped_dirs)?;
 
         let execution_cost = match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
             ExecutionResult::ProcessExit {
@@ -89,7 +91,7 @@ impl Executor {
 
                 let policy = ExecutionPolicy::RunUntilLimit { limit };
 
-                let mut runtime = runtime::create_runtime(module, true).unwrap();
+                let mut runtime = runtime::create_runtime(module, true, self.mapped_dirs).unwrap();
                 runtime.call_test_function(policy).unwrap()
             })
             .collect();
@@ -107,7 +109,8 @@ mod tests {
 
     fn mutate_module(test_case: &str, mutations: &[Mutation]) -> Result<Vec<ExecutionResult>> {
         let module = WasmModule::from_file(&format!("testdata/{test_case}/test.wasm"))?;
-        let executor = Executor::new(&Config::default());
+        let config = Config::default();
+        let executor = Executor::new(&config);
         executor.execute_mutants(&module, mutations)
     }
 

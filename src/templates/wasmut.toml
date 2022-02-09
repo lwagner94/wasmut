@@ -6,6 +6,8 @@
 #    timeout = original_cycles * timeout_multiplier
 #timeout_multiplier = 2.0
 
+map_dirs = [["testcases/foo", "bar"],]
+
 #[filter]
 #    By default, all files and functions are allowed, which means that
 #    every wasm-instruction can potentially be mutated. 
@@ -23,8 +25,8 @@
 #allowed_function = ["^add"]
 #allowed_file = ["src/add.c", "src/main.c"]
 
-[report]
-path_rewrite = ["^/foo/src/", "/bar/src/"]
+#[report]
+#path_rewrite = ["^/foo/src/", "/bar/src/"]
 
 
 

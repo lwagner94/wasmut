@@ -22,7 +22,11 @@ pub struct WasmerRuntime {
 }
 
 impl Runtime for WasmerRuntime {
-    fn new(module: WasmModule, discard_output: bool) -> Result<Self> {
+    fn new(
+        module: WasmModule,
+        discard_output: bool,
+        map_dirs: &[(String, String)],
+    ) -> Result<Self> {
         use wasmer::{Instance, Module, Store};
 
         let cost_function = |_: &Operator| -> u64 { 1 };
@@ -41,6 +45,12 @@ impl Runtime for WasmerRuntime {
             let stdout = Box::new(Pipe::new());
             let stderr = Box::new(Pipe::new());
             state_builder.stdout(stdout).stderr(stderr);
+        }
+
+        for mapped_dir in map_dirs {
+            state_builder
+                .map_dir(&mapped_dir.1, &mapped_dir.0)
+                .with_context(|| format!("Could not map {} to {}", mapped_dir.0, mapped_dir.1))?;
         }
 
         let mut wasi_env = state_builder

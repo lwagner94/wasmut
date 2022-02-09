@@ -23,11 +23,22 @@ impl FilterConfig {
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct EngineConfig {
     timeout_multiplier: Option<f64>,
+    map_dirs: Option<Vec<(String, String)>>,
 }
 
 impl EngineConfig {
     pub fn timeout_multiplier(&self) -> f64 {
         self.timeout_multiplier.unwrap_or(TIMEOUT_MULTIPLIER)
+    }
+
+    pub fn map_dirs(&self) -> &[(String, String)] {
+        //
+
+        if let Some(map_dirs) = self.map_dirs.as_ref() {
+            map_dirs.as_slice()
+        } else {
+            &[]
+        }
     }
 }
 
@@ -139,10 +150,29 @@ mod tests {
         let engine: EngineConfig = toml::from_str(
             r#"
         timeout_multiplier = 2
+        map_dirs = [["a/foo", "b/bar"], ["abcd", "abcd"]]
 
     "#,
         )?;
         assert_eq!(engine.timeout_multiplier, Some(2.0));
+        assert_eq!(
+            engine.map_dirs(),
+            [
+                ("a/foo".into(), "b/bar".into()),
+                ("abcd".into(), "abcd".into())
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn defaultengine_config() -> Result<()> {
+        let engine: EngineConfig = toml::from_str(
+            r#"
+            "#,
+        )?;
+        assert_eq!(engine.timeout_multiplier(), 2.0);
+        assert_eq!(engine.map_dirs(), []);
         Ok(())
     }
 

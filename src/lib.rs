@@ -127,7 +127,7 @@ fn load_config(config_path: Option<String>, module: &str, config_samedir: bool) 
 
         if default_path.exists() {
             // wasmut.toml exists in current directory
-            info!("Loading default configuration file {config_path:?}");
+            info!("Loading default configuration file {default_path:?}");
             Ok(Config::parse_file(default_path)?)
         } else {
             // No config found, using defaults
@@ -316,9 +316,9 @@ mod tests {
         assert_eq!(hits, 2);
     }
 
-    #[test]
-    fn test_run_zero_exit() {
-        let module_path = Path::new("testdata/simple_add/test.wasm");
+    fn run_module(testcase: &str) -> Result<()> {
+        let path_string = format!("testdata/{testcase}/test.wasm");
+        let module_path = Path::new(&path_string);
 
         let args = CLIArguments::parse_args_from(vec![
             "wasmut",
@@ -326,19 +326,23 @@ mod tests {
             "-C",
             module_path.to_str().unwrap(),
         ]);
-        assert!(run_main(args).is_ok());
+
+        run_main(args)
+    }
+
+    #[test]
+    fn test_run_zero_exit() {
+        assert!(run_module("simple_add").is_ok());
     }
 
     #[test]
     fn test_run_nonzero_exit() {
-        let module_path = Path::new("testdata/nonzero_exit/test.wasm");
+        assert!(run_module("nonzero_exit").is_err());
+    }
 
-        let args = CLIArguments::parse_args_from(vec![
-            "wasmut",
-            "run",
-            "-C",
-            module_path.to_str().unwrap(),
-        ]);
-        assert!(run_main(args).is_err());
+    #[test]
+    fn test_run_count_words() {
+        // Test the map_dirs parameter
+        assert!(run_module("count_words").is_ok());
     }
 }

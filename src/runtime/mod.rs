@@ -19,15 +19,23 @@ pub enum ExecutionResult {
 }
 
 pub trait Runtime {
-    fn new(module: WasmModule, discard_output: bool) -> Result<Self>
+    fn new(module: WasmModule, discard_output: bool, map_dirs: &[(String, String)]) -> Result<Self>
     where
         Self: Sized;
 
     fn call_test_function(&mut self, policy: ExecutionPolicy) -> Result<ExecutionResult>;
 }
 
-pub fn create_runtime(module: WasmModule, discard_output: bool) -> Result<Box<dyn Runtime>> {
-    Ok(Box::new(WasmerRuntime::new(module, discard_output)?))
+pub fn create_runtime(
+    module: WasmModule,
+    discard_output: bool,
+    map_dirs: &[(String, String)],
+) -> Result<Box<dyn Runtime>> {
+    Ok(Box::new(WasmerRuntime::new(
+        module,
+        discard_output,
+        map_dirs,
+    )?))
 }
 
 #[cfg(test)]
@@ -38,7 +46,7 @@ mod tests {
     #[test]
     fn test_run_entry_point() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        let mut runtime = WasmerRuntime::new(module, true)?;
+        let mut runtime = WasmerRuntime::new(module, true, &[])?;
 
         let result = runtime.call_test_function(ExecutionPolicy::RunUntilReturn)?;
 
@@ -60,7 +68,7 @@ mod tests {
     #[test]
     fn test_execution_limit() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        let mut runtime = WasmerRuntime::new(module, true)?;
+        let mut runtime = WasmerRuntime::new(module, true, &[])?;
 
         let result = runtime.call_test_function(ExecutionPolicy::RunUntilLimit { limit: 1 })?;
 
