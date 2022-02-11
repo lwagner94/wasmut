@@ -1,55 +1,101 @@
 {{#*inline "page"}}
 
 
-<div class="filename-container">
+{{!-- <div class="filename-container">
   <span class="filename-text">{{file}}</span>
-</div>
-<div class="source-table-container">
-  <table class="source-table">
-    {{#each lines}}
-    <tr>
-      {{#if this.number_of_mutants}}
-      <td class="mutant-counter">
-        
-        <button class="bt-show-mutant" onclick="showMutant('mutants-line-{{@index}}')">{{this.number_of_killed_mutants}}/{{this.number_of_mutants}}</button>
-      </td>
-      {{else}}
-      <td></td>
-      {{/if}}
-      <td class="line-number line-class-{{this.css_line_class}}">
-        <a id="{{this.line_number}}" href="#{{this.line_number}}">{{this.line_number}}</a>
-      </td>
+</div> --}}
+{{!-- <table class="source-table">
+  {{#each lines}}
+  <tr>
+    {{#if this.number_of_mutants}}
+    <td class="mutant-counter">
+      <button class="bt-show-mutant"
+        onclick="showMutant('mutants-line-{{@index}}')">{{this.number_of_killed_mutants}}/{{this.number_of_mutants}}</button>
+    </td>
+    {{else}}
+    <td></td>
+    {{/if}}
+    <td class="line-number line-class-{{this.css_line_class}}">
+      <a id="{{this.line_number}}" href="#{{this.line_number}}">{{this.line_number}}</a>
+    </td>
 
-      
-      <td class="source-line line-class-{{this.css_line_class}}">{{{this.code}}}</td>
-    </tr>
-    
-    {{#each this.mutants}}
-    <tr class="mutants-line-{{@../index}} hide-mutant-list">
-      <td></td>
-      <td class="inline-mutant-list"></td>
-      <td class="inline-mutant-list">{{this.outcome}}: {{this.text}}</td>
-    </tr>
-    {{/each}}
 
-    {{/each}}
-  </table> 
+    <td class="source-line line-class-{{this.css_line_class}}">{{{this.code}}}</td>
+  </tr>
+
+  {{#each this.mutants}}
+  <tr class="mutants-line-{{@../index}} hide-mutant-list">
+    <td></td>
+    <td class="inline-mutant-list"></td>
+    <td class="inline-mutant-list">{{this.outcome}}: {{this.text}}</td>
+  </tr>
+  {{/each}}
+
+  {{/each}}
+</table> --}}
+
+<div class="code-lines container">
+  {{#each lines}}
+  <div class="columns">
+    <div class="column ">
+      <div class="columns">
+        <div class="column is-half">
+          {{#if this.number_of_mutants}}
+          {{!-- <button class="button is-small is-success is-light"
+            onclick="showMutant('mutants-line-{{@index}}')">{{this.number_of_killed_mutants}}/{{this.number_of_mutants}}</button>
+          --}}
+
+          <span class="tag {{this.css_line_class}} is-light">
+            <a onclick="showMutant('mutants-line-{{@index}}')">{{this.number_of_killed_mutants}}/{{this.number_of_mutants}}</a>
+          </span>
+          {{else}}
+
+          {{/if}}
+        </div>
+        <div class="column has-text-right is-half">
+          <a id="{{this.line_number}}" href="#{{this.line_number}}">{{this.line_number}}</a>
+        </div>
+      </div>
+
+
+    </div>
+    <div class="code-line column is-11">
+      {{{this.code}}}
+    </div>
+  </div>
+  
+  <div class="columns mutants-line-{{@index}} hide-mutant-list">
+    <div class="column"></div>
+    <div class="column is-11">
+      <div class="notification">
+        <button class="delete" onclick="showMutant('mutants-line-{{@index}}')"></button>
+        {{#each this.mutants}}
+        <div class="is-size-6"><strong>{{this.outcome}}:</strong> {{this.text}}</div>
+        {{/each}}
+      </div>
+    </div>
+  </div>
+  
+
+  {{/each}}
 </div>
+
+
 
 <script>
-function showMutant(id) {
-  for (const e of document.getElementsByClassName(id)) {
+  function showMutant(id) {
+    for (const e of document.getElementsByClassName(id)) {
 
-    if (e.classList.contains('show-mutant-list')) {
-      e.classList.add("hide-mutant-list");
-      e.classList.remove("show-mutant-list");
-    } else {
-      e.classList.add("show-mutant-list");
-      e.classList.remove("hide-mutant-list");
+      if (e.classList.contains('show-mutant-list')) {
+        e.classList.add("hide-mutant-list");
+        e.classList.remove("show-mutant-list");
+      } else {
+        e.classList.add("show-mutant-list");
+        e.classList.remove("hide-mutant-list");
+      }
     }
+
   }
-  
-}
 </script>
 
 {{/inline}}

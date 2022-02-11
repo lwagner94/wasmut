@@ -1,0 +1,39 @@
+
+
+.code-line span {
+    padding: 0px;
+    font-family: monospace;
+    white-space: pre;
+    background-color: inherit !important;
+}
+
+.code-lines .column {
+    padding-top: 0rem;
+    padding-bottom: 0rem;
+}
+
+
+.code-lines .columns  {
+    margin-top: 0rem;
+    margin-bottom: 0rem;
+}
+
+.logo {
+    margin-bottom: -0.75rem;;
+}
+
+.hide-mutant-list div {
+    display: none;
+}
+
+.show-mutant-list div {
+    display: block;
+}
+
+.tag a {
+    color: inherit;
+}
+
+.tag a:hover {
+    text-decoration: underline;
+}

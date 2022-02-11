@@ -2,31 +2,21 @@ pub mod cli;
 pub mod html;
 mod rewriter;
 
-use std::{
-    collections::BTreeMap,
-    fs::File,
-    io::BufReader,
-    io::{BufRead, BufWriter},
-    path::Path,
-};
+use std::{collections::BTreeMap, fs::File, io::BufRead, io::BufReader, path::Path};
 
 use anyhow::Result;
 
 use crate::{
     addressresolver::{AddressResolver, CodeLocation},
-    config::Config,
     mutation::Mutation,
     operator::InstructionReplacement,
     runtime::ExecutionResult,
-    templates,
     wasmmodule::WasmModule,
 };
-use handlebars::{to_json, Handlebars};
 use serde::Serialize;
 use syntect::{
     easy::HighlightLines,
     highlighting::Theme,
-    html::highlighted_html_for_string,
     parsing::{SyntaxReference, SyntaxSet},
 };
 
@@ -112,6 +102,7 @@ where
     Ok(BufReader::new(file).lines())
 }
 
+#[derive(Serialize)]
 pub struct AccumulatedOutcomes {
     pub alive: i32,
     pub timeout: i32,
@@ -218,15 +209,6 @@ struct SyntectFileContext<'a> {
 }
 
 impl<'a> SyntectFileContext<'a> {
-    fn generate_html(&self, line: &str) -> String {
-        highlighted_html_for_string(
-            line,
-            &self.context.syntax_set,
-            self.syntax,
-            &self.context.theme,
-        )
-    }
-
     fn terminal_string(&self, line: &str) -> String {
         let mut highlight = HighlightLines::new(self.syntax, &self.context.theme);
         let regions = highlight.highlight(line, &self.context.syntax_set);

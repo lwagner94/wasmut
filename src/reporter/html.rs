@@ -3,21 +3,17 @@ use std::{collections::BTreeMap, fs::File, io::BufWriter, path::Path};
 use anyhow::Result;
 use chrono::prelude::*;
 use handlebars::Handlebars;
+
 use serde::Serialize;
 use syntect::{
     html::{ClassStyle, ClassedHTMLGenerator},
     parsing::SyntaxSet,
-    util::LinesWithEndings,
 };
 
-use crate::{
-    config::{Config, ReportConfig},
-    templates,
-};
+use crate::{config::ReportConfig, templates};
 
 use super::{
-    rewriter::PathRewriter, AccumulatedOutcomes, ExecutedMutant, LineNumberMutantMap,
-    MutationOutcome, Reporter, SyntectContext,
+    rewriter::PathRewriter, AccumulatedOutcomes, LineNumberMutantMap, MutationOutcome, Reporter,
 };
 
 impl From<MutationOutcome> for String {
@@ -28,6 +24,16 @@ impl From<MutationOutcome> for String {
             MutationOutcome::Timeout => "TIMEOUT".into(),
             MutationOutcome::Error => "ERROR".into(),
         }
+    }
+}
+
+pub fn bulma_class_from_mutation_score(score: f32) -> String {
+    if score > 75.0 {
+        "is-success".into()
+    } else if score > 50.0 {
+        "is-warning".into()
+    } else {
+        "is-danger".into()
     }
 }
 
@@ -78,16 +84,16 @@ impl HTMLReporter {
             let line = line?;
 
             let mut html_mutants = Vec::new();
-            let mut css_line_class = "no-mutant".into();
+            let mut css_line_class = "is-white".into();
             let mut killed_mutants = 0;
 
             if let Some(mutants) = mapping.get(&line_nr) {
                 if mutants.iter().any(|m| m.outcome == MutationOutcome::Alive) {
-                    css_line_class = "alive".into();
+                    css_line_class = "is-danger".into();
                 } else if mutants.iter().all(|m| m.outcome == MutationOutcome::Killed) {
-                    css_line_class = "killed".into();
+                    css_line_class = "is-success".into();
                 } else {
-                    css_line_class = "timeout-error".into();
+                    css_line_class = "is-warning".into();
                 }
 
                 killed_mutants = mutants.iter().fold(0usize, |acc, m| {
@@ -114,6 +120,7 @@ impl HTMLReporter {
 
             html_generator.parse_html_for_line_which_includes_newline(&format!("{}\n", line));
 
+            // let output_html = line;
             let output_html = html_generator.finalize();
             // dbg!(output_html);
             lines.push(SourceLine {
@@ -131,11 +138,26 @@ impl HTMLReporter {
     fn accumulate_outcomes_for_file(&self, mutants: &LineNumberMutantMap) -> AccumulatedOutcomes {
         let mut all_outcomes = Vec::new();
 
-        for (_, mutants) in mutants {
+        for mutants in mutants.values() {
             all_outcomes.extend(mutants.iter());
         }
 
         super::accumulate_outcomes_ref(&all_outcomes)
+    }
+
+    fn create_assets(&self) -> Result<()> {
+        let output_dir = Path::new(&self.output_directory);
+
+        let ts = syntect::highlighting::ThemeSet::load_defaults();
+        let theme = ts.themes["InspiredGitHub"].clone();
+        let css = syntect::html::css_for_theme_with_class_style(&theme, ClassStyle::Spaced);
+        std::fs::write(output_dir.join("syntax.css"), css)?;
+
+        std::fs::write(output_dir.join("style.css"), templates::CSS)?;
+        std::fs::write(output_dir.join("bulma.min.css"), templates::BULMA)?;
+        std::fs::write(output_dir.join("BULMA-LICENSE"), templates::BULMA_LICENSE)?;
+
+        Ok(())
     }
 }
 
@@ -199,13 +221,28 @@ impl Reporter for HTMLReporter {
                 killed: acc.killed,
                 timeout: acc.timeout,
                 error: acc.error,
+                // TODO: would it be nicer to move this to the template, using a helper?
+                bulma_mutation_score_class: bulma_class_from_mutation_score(acc.mutation_score),
             });
         }
 
+        let stats = super::accumulate_outcomes(executed_mutants);
+
+        let total_mutation_score_class = bulma_class_from_mutation_score(stats.mutation_score);
+
         let data = BTreeMap::from([
             ("source_files", handlebars::to_json(mutated_files)),
-            ("file", handlebars::to_json("Overview")),
+            ("file", handlebars::to_json::<Option<String>>(None)),
             ("info", handlebars::to_json(&info)),
+            ("stats", handlebars::to_json(&stats)),
+            (
+                "total_mutation_score",
+                handlebars::to_json(format!("{:.1}", stats.mutation_score)),
+            ),
+            (
+                "total_mutation_score_class",
+                handlebars::to_json(total_mutation_score_class),
+            ),
         ]);
         let writer = BufWriter::new(File::create(format!(
             "{}/index.html",
@@ -216,12 +253,7 @@ impl Reporter for HTMLReporter {
             .render_to_write("index", &data, writer)
             .unwrap();
 
-        let ts = syntect::highlighting::ThemeSet::load_defaults();
-        let theme = ts.themes["InspiredGitHub"].clone();
-
-        let css = syntect::html::css_for_theme_with_class_style(&theme, ClassStyle::Spaced);
-
-        std::fs::write(format!("{}/style.css", &self.output_directory), css).unwrap();
+        self.create_assets()?;
 
         Ok(())
     }
@@ -235,6 +267,7 @@ fn generate_filename(file: &str) -> String {
 
 fn init_template_engine() -> Handlebars<'static> {
     let mut handlebars = Handlebars::new();
+
     handlebars.set_strict_mode(true);
     handlebars
         .register_template_string("base", templates::BASE_TEMPLATE)
@@ -273,6 +306,7 @@ struct MutatedFile {
     killed: i32,
     error: i32,
     timeout: i32,
+    bulma_mutation_score_class: String,
 }
 
 #[derive(Serialize)]

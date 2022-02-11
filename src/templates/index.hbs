@@ -1,33 +1,55 @@
 {{#*inline "page"}}
 
-<table class="results-table">
-<tr>
-    <th>File</th>
-    <th>Mutation Score</th>
-    <th></th>
-    <th>Alive</th>
-    <th>Killed</th>
-    <th>Error</th>
-    <th>Timeout</th>
-    
-</tr>
-{{#each source_files}}
+<div class="container">
+<table class="table is-hoverable is-fullwidth">
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Mutation Score</th>
+      <th></th>
+      <th>Alive</th>
+      <th>Killed</th>
+      <th>Error</th>
+      <th>Timeout</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each source_files}}
+    <tr>
     <td>
-        {{#if this.link}}
-        <a href="{{this.link}}">{{this.name}}</a>    
-        {{else}}
-        {{this.name}}
-        {{/if}}
+      {{#if this.link}}
+      <a class="is-family-code" href="{{this.link}}">{{this.name}}</a>
+      {{else}}
+      {{this.name}}
+      {{/if}}
     </td>
     <td>{{this.mutation_score}}%</td>
-    <td><progress value="{{this.mutation_score}}" max="100">{{this.mutation_score}}</progress></td>
+    <td>
+      <progress class="progress is-large {{this.bulma_mutation_score_class}}" value="{{this.mutation_score}}"
+        max="100">{{this.mutation_score}}</progress>
+    </td>
     <td>{{this.alive}}</td>
     <td>{{this.killed}}</td>
     <td>{{this.error}}</td>
     <td>{{this.timeout}}</td>
-    
-    
-{{/each}}
+    </tr>
+    {{/each}}
+
+
+    <tr>
+      <td>Total</td>
+      <td>{{total_mutation_score}}%</td>
+    <td>
+      <progress class="progress is-large {{total_mutation_score_class}}" value="{{total_mutation_score}}"
+        max="100">{{total_mutation_score}}</progress>
+    </td>
+    <td>{{stats.alive}}</td>
+    <td>{{stats.killed}}</td>
+    <td>{{stats.error}}</td>
+    <td>{{stats.timeout}}</td>
+    </tr>
+  </tbody>
 </table>
+</div>
 {{/inline}}
 {{> base}}
