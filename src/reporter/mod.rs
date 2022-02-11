@@ -112,6 +112,65 @@ where
     Ok(BufReader::new(file).lines())
 }
 
+pub struct AccumulatedOutcomes {
+    pub alive: i32,
+    pub timeout: i32,
+    pub killed: i32,
+    pub error: i32,
+    pub mutation_score: f32,
+}
+
+pub fn accumulate_outcomes(executed_mutants: &[ExecutedMutant]) -> AccumulatedOutcomes {
+    let (alive, timeout, killed, error) =
+        executed_mutants
+            .iter()
+            .fold(
+                (0, 0, 0, 0),
+                |(alive, timeout, killed, error), outcome| match outcome.outcome {
+                    MutationOutcome::Alive => (alive + 1, timeout, killed, error),
+                    MutationOutcome::Killed => (alive, timeout, killed + 1, error),
+                    MutationOutcome::Timeout => (alive, timeout + 1, killed, error),
+                    MutationOutcome::Error => (alive, timeout, killed, error + 1),
+                },
+            );
+    let mutation_score =
+        100f32 * (timeout + killed + error) as f32 / (alive + timeout + killed + error) as f32;
+
+    AccumulatedOutcomes {
+        alive,
+        timeout,
+        killed,
+        error,
+        mutation_score,
+    }
+}
+
+// TODO: Make this and the function above generic!
+pub fn accumulate_outcomes_ref(executed_mutants: &[&ExecutedMutant]) -> AccumulatedOutcomes {
+    let (alive, timeout, killed, error) =
+        executed_mutants
+            .iter()
+            .fold(
+                (0, 0, 0, 0),
+                |(alive, timeout, killed, error), outcome| match outcome.outcome {
+                    MutationOutcome::Alive => (alive + 1, timeout, killed, error),
+                    MutationOutcome::Killed => (alive, timeout, killed + 1, error),
+                    MutationOutcome::Timeout => (alive, timeout + 1, killed, error),
+                    MutationOutcome::Error => (alive, timeout, killed, error + 1),
+                },
+            );
+    let mutation_score =
+        100f32 * (timeout + killed + error) as f32 / (alive + timeout + killed + error) as f32;
+
+    AccumulatedOutcomes {
+        alive,
+        timeout,
+        killed,
+        error,
+        mutation_score,
+    }
+}
+
 struct SyntectContext {
     syntax_set: SyntaxSet,
     theme: Theme,

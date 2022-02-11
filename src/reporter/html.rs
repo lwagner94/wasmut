@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, fs::File, io::BufWriter, path::Path};
 
 use anyhow::Result;
+use chrono::prelude::*;
 use handlebars::Handlebars;
 use serde::Serialize;
 use syntect::{
@@ -14,7 +15,10 @@ use crate::{
     templates,
 };
 
-use super::{ExecutedMutant, LineNumberMutantMap, MutationOutcome, Reporter, SyntectContext};
+use super::{
+    rewriter::PathRewriter, AccumulatedOutcomes, ExecutedMutant, LineNumberMutantMap,
+    MutationOutcome, Reporter, SyntectContext,
+};
 
 impl From<MutationOutcome> for String {
     fn from(m: MutationOutcome) -> Self {
@@ -30,14 +34,22 @@ impl From<MutationOutcome> for String {
 pub struct HTMLReporter {
     output_directory: String,
     syntax_set: SyntaxSet,
+    path_rewriter: Option<PathRewriter>,
 }
 
 impl HTMLReporter {
-    pub fn new(_config: &ReportConfig, output_directory: &str) -> Self {
-        Self {
+    pub fn new(config: &ReportConfig, output_directory: &str) -> Result<Self> {
+        let path_rewriter = if let Some((regex, replacement)) = &config.path_rewrite() {
+            Some(PathRewriter::new(regex, replacement)?)
+        } else {
+            None
+        };
+
+        Ok(Self {
             output_directory: output_directory.into(),
             syntax_set: SyntaxSet::load_defaults_newlines(),
-        }
+            path_rewriter,
+        })
     }
 
     fn generate_source_lines(
@@ -67,6 +79,7 @@ impl HTMLReporter {
 
             let mut html_mutants = Vec::new();
             let mut css_line_class = "no-mutant".into();
+            let mut killed_mutants = 0;
 
             if let Some(mutants) = mapping.get(&line_nr) {
                 if mutants.iter().any(|m| m.outcome == MutationOutcome::Alive) {
@@ -77,6 +90,14 @@ impl HTMLReporter {
                     css_line_class = "timeout-error".into();
                 }
 
+                killed_mutants = mutants.iter().fold(0usize, |acc, m| {
+                    if m.outcome == MutationOutcome::Killed {
+                        acc + 1
+                    } else {
+                        acc
+                    }
+                });
+
                 for mutant in mutants {
                     html_mutants.push(HTMLMutant {
                         outcome: mutant.outcome.clone().into(),
@@ -86,7 +107,7 @@ impl HTMLReporter {
             }
 
             let mut html_generator = ClassedHTMLGenerator::new_with_class_style(
-                &syntax,
+                syntax,
                 &self.syntax_set,
                 ClassStyle::Spaced,
             );
@@ -97,14 +118,24 @@ impl HTMLReporter {
             // dbg!(output_html);
             lines.push(SourceLine {
                 line_number: line_nr,
-                number_of_mutations: html_mutants.len(),
+                number_of_mutants: html_mutants.len(),
+                number_of_killed_mutants: killed_mutants,
                 code: output_html,
                 mutants: html_mutants,
                 css_line_class,
             })
         }
-        dbg!(&lines);
         Ok(lines)
+    }
+
+    fn accumulate_outcomes_for_file(&self, mutants: &LineNumberMutantMap) -> AccumulatedOutcomes {
+        let mut all_outcomes = Vec::new();
+
+        for (_, mutants) in mutants {
+            all_outcomes.extend(mutants.iter());
+        }
+
+        super::accumulate_outcomes_ref(&all_outcomes)
     }
 }
 
@@ -119,7 +150,15 @@ impl Reporter for HTMLReporter {
 
         let mut mutated_files = Vec::new();
 
+        let info = GeneralInfo::new();
+
         for (file, line_number_map) in file_mapping {
+            let file = if let Some(path_rewriter) = &self.path_rewriter {
+                path_rewriter.rewrite(file)
+            } else {
+                file
+            };
+
             let link = match self.generate_source_lines(&file, &line_number_map) {
                 Ok(lines) => {
                     // TODO: Error handling?
@@ -134,6 +173,7 @@ impl Reporter for HTMLReporter {
                     let data = BTreeMap::from([
                         ("file", handlebars::to_json(&file)),
                         ("lines", handlebars::to_json(lines)),
+                        ("info", handlebars::to_json(&info)),
                     ]);
 
                     // TODO: Refactor error
@@ -149,10 +189,24 @@ impl Reporter for HTMLReporter {
                 }
             };
 
-            mutated_files.push(MutatedFile { name: file, link });
+            let acc = self.accumulate_outcomes_for_file(&line_number_map);
+
+            mutated_files.push(MutatedFile {
+                name: file,
+                link,
+                mutation_score: format!("{:.1}", acc.mutation_score),
+                alive: acc.alive,
+                killed: acc.killed,
+                timeout: acc.timeout,
+                error: acc.error,
+            });
         }
 
-        let data = BTreeMap::from([("source_files", handlebars::to_json(mutated_files))]);
+        let data = BTreeMap::from([
+            ("source_files", handlebars::to_json(mutated_files)),
+            ("file", handlebars::to_json("Overview")),
+            ("info", handlebars::to_json(&info)),
+        ]);
         let writer = BufWriter::new(File::create(format!(
             "{}/index.html",
             &self.output_directory
@@ -194,16 +248,17 @@ fn init_template_engine() -> Handlebars<'static> {
     handlebars
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize)]
 struct HTMLMutant {
     outcome: String,
     text: String,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize)]
 struct SourceLine {
     line_number: u64,
-    number_of_mutations: usize,
+    number_of_killed_mutants: usize,
+    number_of_mutants: usize,
     mutants: Vec<HTMLMutant>,
     code: String,
     css_line_class: String,
@@ -213,6 +268,32 @@ struct SourceLine {
 struct MutatedFile {
     name: String,
     link: Option<String>,
+    mutation_score: String,
+    alive: i32,
+    killed: i32,
+    error: i32,
+    timeout: i32,
+}
+
+#[derive(Serialize)]
+struct GeneralInfo {
+    program_name: String,
+    program_version: String,
+    date: String,
+    time: String,
+}
+
+impl GeneralInfo {
+    fn new() -> Self {
+        let current_time = Local::now();
+
+        GeneralInfo {
+            program_name: String::from(env!("CARGO_PKG_NAME")),
+            program_version: String::from(env!("CARGO_PKG_VERSION")),
+            date: format!("{}", current_time.format("%Y-%m-%d")),
+            time: format!("{}", current_time.format("%H:%M:%S")),
+        }
+    }
 }
 
 #[cfg(test)]

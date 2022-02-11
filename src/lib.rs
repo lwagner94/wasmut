@@ -103,7 +103,7 @@ fn mutate(
             reporter.report(&executed_mutants)?;
         }
         Output::HTML => {
-            let reporter = HTMLReporter::new(config.report(), output_directory);
+            let reporter = HTMLReporter::new(config.report(), output_directory)?;
             reporter.report(&executed_mutants)?;
         }
     }

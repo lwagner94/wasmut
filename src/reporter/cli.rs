@@ -42,30 +42,22 @@ impl CLIReporter {
     }
 
     fn summary(&self, executed_mutants: &[ExecutedMutant]) {
-        let (alive, timeout, killed, error) = executed_mutants.iter().fold(
-            (0, 0, 0, 0),
-            |(alive, timeout, killed, error), outcome| match outcome.outcome {
-                MutationOutcome::Alive => (alive + 1, timeout, killed, error),
-                MutationOutcome::Killed => (alive, timeout, killed + 1, error),
-                MutationOutcome::Timeout => (alive, timeout + 1, killed, error),
-                MutationOutcome::Error => (alive, timeout, killed, error + 1),
-            },
-        );
+        let acc = super::accumulate_outcomes(executed_mutants);
 
         let alive_str: ColoredString = MutationOutcome::Alive.into();
         let timeout_str: ColoredString = MutationOutcome::Timeout.into();
         let error_str: ColoredString = MutationOutcome::Error.into();
         let killed_str: ColoredString = MutationOutcome::Killed.into();
 
-        let mutation_score =
-            100f32 * (timeout + killed + error) as f32 / (alive + timeout + killed + error) as f32;
-
         output::output_string("\n");
-        output::output_string(format!("{0:15} {1}\n", alive_str, alive));
-        output::output_string(format!("{0:15} {1}\n", timeout_str, timeout));
-        output::output_string(format!("{0:15} {1}\n", error_str, error));
-        output::output_string(format!("{0:15} {1}\n", killed_str, killed));
-        output::output_string(format!("{0:15} {1}%\n", "Mutation score", mutation_score));
+        output::output_string(format!("{0:15} {1}\n", alive_str, acc.alive));
+        output::output_string(format!("{0:15} {1}\n", timeout_str, acc.timeout));
+        output::output_string(format!("{0:15} {1}\n", error_str, acc.error));
+        output::output_string(format!("{0:15} {1}\n", killed_str, acc.killed));
+        output::output_string(format!(
+            "{0:15} {1}%\n",
+            "Mutation score", acc.mutation_score
+        ));
     }
 
     fn enumerate_mutants(&self, executed_mutants: &[ExecutedMutant]) -> Result<()> {

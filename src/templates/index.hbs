@@ -1,15 +1,33 @@
 {{#*inline "page"}}
-<ul>
+
+<table class="results-table">
+<tr>
+    <th>File</th>
+    <th>Mutation Score</th>
+    <th></th>
+    <th>Alive</th>
+    <th>Killed</th>
+    <th>Error</th>
+    <th>Timeout</th>
+    
+</tr>
 {{#each source_files}}
-    <li> 
-    {{#if this.link}}
-    <a href="{{this.link}}">{{this.name}}</a>    
-    {{else}}
-    {{this.name}}
-    {{/if}}
-</li>
+    <td>
+        {{#if this.link}}
+        <a href="{{this.link}}">{{this.name}}</a>    
+        {{else}}
+        {{this.name}}
+        {{/if}}
+    </td>
+    <td>{{this.mutation_score}}%</td>
+    <td><progress value="{{this.mutation_score}}" max="100">{{this.mutation_score}}</progress></td>
+    <td>{{this.alive}}</td>
+    <td>{{this.killed}}</td>
+    <td>{{this.error}}</td>
+    <td>{{this.timeout}}</td>
+    
     
 {{/each}}
-</ul>
+</table>
 {{/inline}}
 {{> base}}
