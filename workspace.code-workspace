@@ -7,10 +7,13 @@
 	"settings": {
 		"cSpell.words": [
 			"binop",
+			"MSRV",
 			"relop",
 			"rotr",
 			"signedness",
+			"testdata",
 			"unop",
+			"WASI",
 			"wasmut"
 		],
 		"editor.hover.delay": 600,

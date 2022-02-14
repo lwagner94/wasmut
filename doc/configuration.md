@@ -24,7 +24,7 @@
 
   - `allowed_function/allowed_file`: By default, all files and functions are allowed, which means that every WebAssembly instruction can potentially be mutated. This is not very practical, so it possible to specify and allowlist for functions and/or files.
   In allowed_functions and allowed_files, you can specify a list of regular expressions that are used to match the function and file names. A wasm-instruction is allowed to be mutated if its function or file matches at least one of the corresponding regular expressions. An empty regular expression also matches everything.
-  Use the `list-files` or `list-functions` commands to get a list of all functions and files in the wasm module.
+  Use the `wasmut list-files` or `wasmut list-functions` commands to get a list of all functions and files in the wasm module.
 
     ```toml
     allowed_functions = ["^add"]
@@ -35,7 +35,7 @@
   - `enabled_operators`: By default, all operators are allowed. If this is not what you want, 
   you can use the enabled_operators option to specify which operators 
   should be enabled. The option is a list of regular expressions. 
-  Use the wasmut list-operators command to get a list of all operators
+  Use the `wasmut list-operators` command or consult the [documentation](./operators.md) to get a list of all operators.
 
     ```toml
     # Enable binop_sub_to_add and all relop_* operators

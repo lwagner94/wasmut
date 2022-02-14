@@ -3,7 +3,7 @@
 [![CI](https://github.com/lwagner94/wasmut/actions/workflows/ci.yml/badge.svg)](https://github.com/lwagner94/wasmut/actions/workflows/ci.yml)
 [![Coverage Status](https://coveralls.io/repos/github/lwagner94/wasmut/badge.svg?branch=main)](https://coveralls.io/github/lwagner94/wasmut?branch=main)
 
-Mutation testing for WebAssembly (Work in progress)
+`wasmut` is a mutation testing tool for WebAssembly [WASI](https://wasi.dev/) modules.
 
 ## Installation
 
@@ -28,7 +28,9 @@ the git repository.
 
 ## Quick start
 Once installed, you can start using `wasmut`. To start off, you can 
-try out some of the examples in the `testdata` folder.
+try out some of the examples in the `testdata` folder. 
+If you want to use `wasmut` with any of your own modules, 
+please be sure to check out the [WebAssembly Module Requirements](doc/module_requirements.md) chapter.
 
 If you run the `mutate` command without any flags, `wasmut`
 will try to load a file called `wasmut.toml` in the current 
@@ -43,7 +45,7 @@ directory and will fall back to default options if it cannot find it.
 ```
 
 Using the `-C/-c` flags, you can instruct wasmut to load 
-a configuration file from a different path. `-C` will try
+a configuration file from a different path. The `-C` flag will try
 to load `wasmut.toml` from the same directory as the module, while `-c` allows you to provide the full path to the configuration file.
 
 ```sh
@@ -66,7 +68,7 @@ Mutation score  100%
 
 ```
 
-By default, `wasmut` will print the results to the console. 
+By default, `wasmut` will print the results to the console - as shown above.
 If you add the `--report html` option, `wasmut` will 
 create a HTML report in the `wasmut-report` folder.
 
@@ -82,12 +84,13 @@ create a HTML report in the `wasmut-report` folder.
 
 
 ## Details
-  - [Operators](doc/operators.md)
-  - [Configuration](doc/configuration.md)
-  - [Commands/Flags/Options](doc/cli.md)
+  - [Mutation Operators](doc/operators.md)
+  - [Configuration File Reference](doc/configuration.md)
+  - [Command Line Options](doc/cli.md)
+  - [WebAssembly Module Requirements](doc/module_requirements.md)
 
 ## Authors
-`wasmut` was developed by Lukas Wagner in 2021/2022.
+`wasmut` was developed by Lukas Wagner.
 
 ## License
 Copyright © 2021-2022 Lukas Wagner.

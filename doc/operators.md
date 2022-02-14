@@ -1,8 +1,7 @@
 
-Supported Mutation operators
-===
+# Supported Mutation operators
 
-The mutation operators available `wasmut` are mainly based on [mull's operators](https://mull.readthedocs.io/en/latest/SupportedMutations.html)
+The mutation operators available in `wasmut` are for now mainly based on [mull's operators](https://mull.readthedocs.io/en/latest/SupportedMutations.html)
 
 | Name                        | Description                                                                  |
 | ---                         | ---                                                                          |
