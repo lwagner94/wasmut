@@ -5,24 +5,91 @@
 
 Mutation testing for WebAssembly (Work in progress)
 
-## How to get started
+## Installation
 
+`wasmut` is implemented in Rust, thus you need the Rust toolchain to compile the
+project. The *minimum supported Rust version (MSRV)* is 1.58.
+
+To install `wasmut` directly from [crates.io](https://crates.io/crates/wasmut), simply run
+```sh
+> cargo install wasmut
+```
+which will install `wasmut` to `$HOME/.cargo/bin` by default. Make sure that 
+this path is included in our `$PATH` variable.
+
+Alternatively, you can also install the latest development version of `wasmut` by cloning 
+the git repository.
+```sh
+> # The --recursive flag is only needed if you want to run the unit tests.
+> git clone --recursive https://github.com/lwagner94/wasmut
+> cd wasmut
+> cargo install --path .
+```
+
+## Quick start
+Once installed, you can start using `wasmut`. To start off, you can 
+try out some of the examples in the `testdata` folder.
+
+If you run the `mutate` command without any flags, `wasmut`
+will try to load a file called `wasmut.toml` in the current 
+directory and will fall back to default options if it cannot find it.
+```sh
+> # Run wasmut using default options (no filtering, all operators)
+> wasmut mutate testdata/simple_add/test.wasm
+[INFO ] No configuration file found or specified, using default config
+[INFO ] Using 8 workers
+[INFO ] Generated 37 mutations
+...
+```
+
+Using the `-C/-c` flags, you can instruct wasmut to load 
+a configuration file from a different path. `-C` will try
+to load `wasmut.toml` from the same directory as the module, while `-c` allows you to provide the full path to the configuration file.
+
+```sh
+> wasmut mutate testdata/simple_add/test.wasm -C
+[INFO ] Loading configuration file from module directory: "testdata/simple_add/wasmut.toml"
+[INFO ] Using 8 workers
+[INFO ] Generated 1 mutations
+[INFO ] Original module executed in 40 cycles
+[INFO ] Setting timeout to 80 cycles
+/home/lukas/Repos/wasmut/testdata/simple_add/simple_add.c:3:14: 
+KILLED: binop_add_to_sub: Replaced I32Add with I32Sub
+    return a + b;
+              ^
+
+ALIVE           0
+TIMEOUT         0
+ERROR           0
+KILLED          1
+Mutation score  100%
 
 ```
-# Run wasmut without configuration
-wasmut mutate main.wasm
 
-# Create new wasmut.toml configuration file
-wasmut init
+By default, `wasmut` will print the results to the console. 
+If you add the `--report html` option, `wasmut` will 
+create a HTML report in the `wasmut-report` folder.
 
-# wasmut will implicitely use wasmut.toml files in the current directory
-wasmut mutate main.wasm
-
-# You can also specify which configuration file to use
-wasmut mutate -c wasmut-other.toml main.wasm
-
-# List functions/source-files
-wasmut list-functions main.wasm
-wasmut list-files main.wasm
-
+```sh
+> wasmut mutate testdata/simple_go/test.wasm -C --report html
+[INFO ] Loading configuration file from module directory: "testdata/simple_go/wasmut.toml"
+[INFO ] Using 8 workers
+...
 ```
+
+![](doc/images/html_index.png)
+![](doc/images/html_detail.png)
+
+
+## Details
+  - [Operators](doc/operators.md)
+  - [Configuration](doc/configuration.md)
+  - [Commands/Flags/Options](doc/cli.md)
+
+## Authors
+`wasmut` was developed by Lukas Wagner in 2021/2022.
+
+## License
+Copyright © 2021-2022 Lukas Wagner.
+
+All code is licensed under the MIT license. See [LICENSE.txt](LICENSE.txt) file for more information.
