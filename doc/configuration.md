@@ -1,6 +1,6 @@
 # Configuration options
 
-## `engine` section
+## `[engine]` section
   - `timeout_multiplier`: 
     Before executing mutants, wasmut will run the wasm module without 
     any mutations and measure the number of cycles it takes to execute.
@@ -19,7 +19,7 @@
     ```
 
 
-## `filter` section
+## `[filter]` section
 
 
   - `allowed_function/allowed_file`: By default, all files and functions are allowed, which means that every WebAssembly instruction can potentially be mutated. This is not very practical, so it possible to specify and allowlist for functions and/or files.
@@ -31,7 +31,19 @@
     allowed_files = ["src/add.c", "src/main.c"]
     ```
 
-## `report` section
+## `[operators]` section
+  - `enabled_operators`: By default, all operators are allowed. If this is not what you want, 
+  you can use the enabled_operators option to specify which operators 
+  should be enabled. The option is a list of regular expressions. 
+  Use the wasmut list-operators command to get a list of all operators
+
+    ```toml
+    # Enable binop_sub_to_add and all relop_* operators
+    enabled_operators = ["binop_sub_to_add", "relop"]
+    ``` 
+
+
+## `[report]` section
   - `path_rewrite`: When rendering reports, `wasmut` needs to have access to the original source files.
   `wasmut` uses DWARF debug information embedded in the WebAssembly modules to locate them. As DWARF embeds absolute paths for the source files into the module, 
   it can be problematic if you want to want to create reports for WebAssembly modules that where build on another host.
@@ -54,6 +66,9 @@ map_dirs = [["testdata/count_words/files", "files"],]
 [filter]
 allowed_functions = ["^count_words"]
 #allowed_files = [""]
+
+[operators]
+enabled_operators = ["binop_sub_to_add", "relop"]
 
 [report]
 path_rewrite = ["^.*/wasmut/", ""]

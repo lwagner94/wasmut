@@ -27,6 +27,15 @@
 #allowed_function = ["^add"]
 #allowed_file = ["src/add.c", "src/main.c"]
 
+#[operators]
+#   By default, all operators are allowed. If this is not what you want, 
+#   you can use the enabled_operators option to specify which operators 
+#   should be enabled. The option is a list of regular expressions.
+#   Use the wasmut list-operators command to get a list of all operators
+# 
+#   Example: Enable binop_sub_to_add and all relop_* operators
+#enabled_operators = ["binop_sub_to_add", "relop"]
+
 #[report]
 #    When rendering reports, `wasmut` needs to have access to the original source files.
 #    wasmut uses DWARF debug information embedded in the WebAssembly modules to locate them. 
