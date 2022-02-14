@@ -13,9 +13,13 @@ pub struct CLIArguments {
 
 #[derive(Subcommand)]
 pub enum CLICommand {
-    /// List all functions of the binary
+    /// List all functions of the binary.
+    ///
+    /// If a config is provided, this command will also
+    /// show whether the function is allowed to be mutated.
+    /// By default, wasmut will try to load a wasmut.toml file from the current directory
     ListFunctions {
-        /// Path to wasmut.toml configuration
+        /// Load wasmut.toml configuration file from the provided path
         #[clap(short, long)]
         config: Option<String>,
 
@@ -26,9 +30,13 @@ pub enum CLICommand {
         /// Path to the wasm module
         wasmfile: String,
     },
-    /// List all files
+    /// List all files of the binary.
+    ///
+    /// If a config is provided, this command will also
+    /// show whether the file is allowed to be mutated.
+    /// By default, wasmut will try to load a wasmut.toml file from the current directory
     ListFiles {
-        /// Path to wasmut.toml configuration
+        /// Load wasmut.toml configuration file from the provided path
         #[clap(short, long)]
         config: Option<String>,
 
@@ -39,9 +47,12 @@ pub enum CLICommand {
         /// Path to the wasm module
         wasmfile: String,
     },
-    /// Run mutants
+    /// Generate and run mutants.
+    ///
+    /// Given a (possibly default) configuration, wasmut will attempt to discover
+    /// mutants and subsequently execute them. After that, a report will be generated
     Mutate {
-        /// Path to wasmut.toml configuration
+        /// Load wasmut.toml configuration file from the provided path
         #[clap(short, long)]
         config: Option<String>,
 
@@ -49,27 +60,30 @@ pub enum CLICommand {
         #[clap(short = 'C', long)]
         config_samedir: bool,
 
-        /// Number of threads
+        /// Number of threads to use when executing mutants
         #[clap(short, long)]
         threads: Option<usize>,
 
+        /// Report output format
         #[clap(short, long, arg_enum, default_value_t=Output::Console)]
         report: Output,
 
+        /// Output directory for reports
         #[clap(short, long, default_value = "wasmut-report")]
         output: String,
+
         /// Path to the wasm module
         wasmfile: String,
     },
-    /// Create new configuration file
+    /// Create new configuration file.
     NewConfig {
         /// Path to the new configuration file
         path: Option<String>,
     },
 
-    /// Run module without any mutations
+    /// Run module without any mutations.
     Run {
-        /// Path to wasmut.toml configuration
+        /// Load wasmut.toml configuration file from the provided path
         #[clap(short, long)]
         config: Option<String>,
 
@@ -81,9 +95,13 @@ pub enum CLICommand {
         wasmfile: String,
     },
 
-    /// List all available mutation operators
+    /// List all available mutation operators.
+    ///
+    /// If a config is provided, this command will also
+    /// show whether the operator is enabled or not.
+    /// By default, wasmut will try to load a wasmut.toml file from the current directory
     ListOperators {
-        /// Path to wasmut.toml configuration
+        /// Load wasmut.toml configuration file from the provided path
         #[clap(short, long)]
         config: Option<String>,
 
