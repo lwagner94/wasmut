@@ -24,15 +24,15 @@ jobs:
       - uses: actions/cache@v1
         with:
           path: ~/.cargo/registry
-          key: '${{ runner.os }}-cargo-registry-${{ hashFiles(''**/Cargo.lock'') }}'
+          key: '${{ runner.os }}-${{ matrix.rust }}-cargo-registry-${{ hashFiles(''**/Cargo.lock'') }}'
       - uses: actions/cache@v1
         with:
           path: ~/.cargo/git
-          key: '${{ runner.os }}-cargo-index-${{ hashFiles(''**/Cargo.lock'') }}'
+          key: '${{ runner.os }}-${{ matrix.rust }}-cargo-index-${{ hashFiles(''**/Cargo.lock'') }}'
       - uses: actions/cache@v1
         with:
           path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ matrix.rust }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -41,75 +41,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-  # test-linux:
-  #   name: Run tests on Linux
-  #   runs-on: ubuntu-latest
-  #   strategy:
-  #     matrix:
-  #       rust:
-  #         - stable
-  #         - 1.58.0
-  #   steps:
-  #     - uses: actions/checkout@v2
-  #       with:
-  #         submodules: recursive
 
-  #     - name: Install toolchain
-  #       uses: actions-rs/toolchain@v1
-  #       with:
-  #         toolchain: ${{ matrix.rust }}
-  #         override: true
-
-  #     - name: Run cargo test
-  #       uses: actions-rs/cargo@v1
-  #       with:
-  #         command: test --all-features
-
-  # test-windows:
-  #   name: Run tests on Windows
-  #   runs-on: windows-latest
-  #   strategy:
-  #     matrix:
-  #       rust:
-  #         - stable
-  #   steps:
-  #     - uses: actions/checkout@v2
-  #       with:
-  #         submodules: recursive
-
-  #     - name: Install toolchain
-  #       uses: actions-rs/toolchain@v1
-  #       with:
-  #         toolchain: ${{ matrix.rust }}
-  #         override: true
-
-  #     - name: Run cargo test
-  #       uses: actions-rs/cargo@v1
-  #       with:
-  #         command: test --all-features
-
-  # test-macos:
-  #   name: Run tests on macOS
-  #   runs-on: macos-latest
-  #   strategy:
-  #     matrix:
-  #       rust:
-  #         - stable
-  #   steps:
-  #     - uses: actions/checkout@v2
-  #       with:
-  #         submodules: recursive
-
-  #     - name: Install toolchain
-  #       uses: actions-rs/toolchain@v1
-  #       with:
-  #         toolchain: ${{ matrix.rust }}
-  #         override: true
-
-  #     - name: Run cargo test
-  #       uses: actions-rs/cargo@v1
-  #       with:
-  #         command: test --all-features
 
   fmt:
     name: Rustfmt
