@@ -103,7 +103,7 @@ fn mutate(
             reporter.report(&executed_mutants)?;
         }
         Output::HTML => {
-            let reporter = HTMLReporter::new(config.report(), output_directory)?;
+            let reporter = HTMLReporter::new(config.report(), Path::new(output_directory))?;
             reporter.report(&executed_mutants)?;
         }
     }
@@ -286,8 +286,9 @@ mod tests {
             output_dir_str,
             module_path.to_str().unwrap(),
         ]);
-
-        assert!(run_main(args).is_ok());
+        let result = run_main(args);
+        dbg!(&result);
+        assert!(result.is_ok());
         assert!(output_dir.path().join("index.html").exists());
     }
 

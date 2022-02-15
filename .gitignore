@@ -3,3 +3,4 @@
 .vscode
 .cargo
 wasmut-report/
+wasmut.toml

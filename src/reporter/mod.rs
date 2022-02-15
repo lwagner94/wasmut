@@ -2,9 +2,15 @@ pub mod cli;
 pub mod html;
 mod rewriter;
 
-use std::{collections::BTreeMap, fs::File, io::BufRead, io::BufReader, path::Path};
+use std::{
+    collections::BTreeMap,
+    fs::File,
+    io::BufReader,
+    io::{BufRead, Lines},
+    path::Path,
+};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::{
     addressresolver::{AddressResolver, CodeLocation},
@@ -19,6 +25,8 @@ use syntect::{
     highlighting::Theme,
     parsing::{SyntaxReference, SyntaxSet},
 };
+
+use self::rewriter::PathRewriter;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum MutationOutcome {
@@ -80,10 +88,19 @@ pub trait Reporter {
 type LineNumberMutantMap<'a> = BTreeMap<u64, Vec<&'a ExecutedMutant>>;
 type FileMutantMap<'a> = BTreeMap<String, LineNumberMutantMap<'a>>;
 
-fn map_mutants_to_files(executed_mutants: &[ExecutedMutant]) -> FileMutantMap {
+fn map_mutants_to_files<'a>(
+    executed_mutants: &'a [ExecutedMutant],
+    path_rewriter: Option<&PathRewriter>,
+) -> FileMutantMap<'a> {
     let mut file_mapping = BTreeMap::new();
     for mutant in executed_mutants {
         if let (Some(file), Some(line)) = (&mutant.location.file, mutant.location.line) {
+            let file = if let Some(path_rewriter) = path_rewriter {
+                path_rewriter.rewrite(file)
+            } else {
+                file.clone()
+            };
+
             let entry = file_mapping
                 .entry(file.clone())
                 .or_insert_with(BTreeMap::new);
@@ -94,7 +111,7 @@ fn map_mutants_to_files(executed_mutants: &[ExecutedMutant]) -> FileMutantMap {
     file_mapping
 }
 
-fn read_lines<P>(filename: P) -> Result<std::io::Lines<std::io::BufReader<File>>>
+fn read_lines<P>(filename: P) -> Result<Lines<BufReader<File>>>
 where
     P: AsRef<Path>,
 {
@@ -102,8 +119,9 @@ where
     Ok(BufReader::new(file).lines())
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct AccumulatedOutcomes {
+    pub total: i32,
     pub alive: i32,
     pub timeout: i32,
     pub killed: i32,
@@ -128,6 +146,7 @@ pub fn accumulate_outcomes(executed_mutants: &[ExecutedMutant]) -> AccumulatedOu
         100f32 * (timeout + killed + error) as f32 / (alive + timeout + killed + error) as f32;
 
     AccumulatedOutcomes {
+        total: executed_mutants.len() as i32,
         alive,
         timeout,
         killed,
@@ -154,12 +173,23 @@ pub fn accumulate_outcomes_ref(executed_mutants: &[&ExecutedMutant]) -> Accumula
         100f32 * (timeout + killed + error) as f32 / (alive + timeout + killed + error) as f32;
 
     AccumulatedOutcomes {
+        total: executed_mutants.len() as i32,
         alive,
         timeout,
         killed,
         error,
         mutation_score,
     }
+}
+
+pub fn accumulate_outcomes_for_file(mutants: &LineNumberMutantMap) -> AccumulatedOutcomes {
+    let mut all_outcomes = Vec::new();
+
+    for mutants in mutants.values() {
+        all_outcomes.extend(mutants.iter());
+    }
+
+    accumulate_outcomes_ref(&all_outcomes)
 }
 
 struct SyntectContext {
@@ -177,23 +207,11 @@ impl SyntectContext {
         Self { syntax_set, theme }
     }
 
-    fn file_context<P: AsRef<Path>>(&self, file: P) -> SyntectFileContext<'_> {
-        let syntax = if let Some(extension) = file.as_ref().extension() {
-            let e = extension.to_os_string().into_string().unwrap();
-            self.syntax_set
-                .find_syntax_by_extension(&e)
-                // If the extension is unknown, we just use plain text
-                .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text())
-        } else {
-            // If we don't have a file extension, we just just the plain text
-            // "highlighting"
-            self.syntax_set.find_syntax_plain_text()
-        };
-
-        SyntectFileContext {
+    fn file_context<P: AsRef<Path>>(&self, file: P) -> Result<SyntectFileContext<'_>> {
+        Ok(SyntectFileContext {
             context: self,
-            syntax,
-        }
+            syntax: create_syntax_reference(&self.syntax_set, file)?,
+        })
     }
 }
 
@@ -201,6 +219,28 @@ impl Default for SyntectContext {
     fn default() -> Self {
         Self::new("InspiredGitHub")
     }
+}
+
+fn create_syntax_reference<P: AsRef<Path>>(
+    syntax_set: &SyntaxSet,
+    file: P,
+) -> Result<&syntect::parsing::SyntaxReference> {
+    let syntax = if let Some(extension) = file.as_ref().extension() {
+        let file_extension = extension
+            .to_os_string()
+            .into_string()
+            .ok()
+            .context("Could not convert OsString to String")?;
+        syntax_set
+            .find_syntax_by_extension(&file_extension)
+            // If the extension is unknown, we just use plain text
+            .unwrap_or_else(|| syntax_set.find_syntax_plain_text())
+    } else {
+        // If we don't have a file extension, we just just the plain text
+        // "highlighting"
+        syntax_set.find_syntax_plain_text()
+    };
+    Ok(syntax)
 }
 
 struct SyntectFileContext<'a> {
@@ -223,14 +263,14 @@ mod tests {
     #[test]
     fn unknown_extension() -> Result<()> {
         let ctx = SyntectContext::default();
-        assert_eq!(&ctx.file_context("test.abc").syntax.name, "Plain Text");
+        assert_eq!(&ctx.file_context("test.abc")?.syntax.name, "Plain Text");
         Ok(())
     }
 
     #[test]
     fn no_extension() -> Result<()> {
         let ctx = SyntectContext::default();
-        assert_eq!(&ctx.file_context("test").syntax.name, "Plain Text");
+        assert_eq!(&ctx.file_context("test")?.syntax.name, "Plain Text");
         Ok(())
     }
 

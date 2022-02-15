@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, fs::File, io::BufWriter, path::Path};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::prelude::*;
-use handlebars::Handlebars;
+use handlebars::{handlebars_helper, Handlebars};
 
 use serde::Serialize;
 use syntect::{
@@ -13,7 +13,8 @@ use syntect::{
 use crate::{config::ReportConfig, templates};
 
 use super::{
-    rewriter::PathRewriter, AccumulatedOutcomes, LineNumberMutantMap, MutationOutcome, Reporter,
+    rewriter::PathRewriter, AccumulatedOutcomes, ExecutedMutant, LineNumberMutantMap,
+    MutationOutcome, Reporter,
 };
 
 impl From<MutationOutcome> for String {
@@ -27,24 +28,62 @@ impl From<MutationOutcome> for String {
     }
 }
 
-pub fn bulma_class_from_mutation_score(score: f32) -> String {
-    if score > 75.0 {
-        "is-success".into()
-    } else if score > 50.0 {
-        "is-warning".into()
-    } else {
-        "is-danger".into()
+#[derive(PartialEq, Debug)]
+enum BulmaClass {
+    Success,
+    Warning,
+    Danger,
+    Invalid,
+}
+
+impl BulmaClass {
+    fn from_mutation_score(score: f32) -> Self {
+        match score {
+            x if (0.0..50.0).contains(&x) => BulmaClass::Danger,
+            x if (50.0..75.0).contains(&x) => BulmaClass::Warning,
+            x if (75.0..=100.0).contains(&x) => BulmaClass::Success,
+            _ => BulmaClass::Invalid,
+        }
     }
 }
 
-pub struct HTMLReporter {
-    output_directory: String,
+impl From<BulmaClass> for String {
+    fn from(b: BulmaClass) -> Self {
+        match b {
+            BulmaClass::Success => "is-success",
+            BulmaClass::Warning => "is-warning",
+            BulmaClass::Danger => "is-danger",
+            BulmaClass::Invalid => "",
+        }
+        .into()
+    }
+}
+
+impl From<AccumulatedOutcomes> for BulmaClass {
+    fn from(a: AccumulatedOutcomes) -> Self {
+        let total = a.alive + a.error + a.killed + a.timeout;
+
+        if a.alive > 0 {
+            // If any mutant is alive, show red
+            BulmaClass::Danger
+        } else if a.killed == total {
+            // If all mutants were killed, green
+            BulmaClass::Success
+        } else {
+            // Else, if some mutants were errors or timeouts, show yellow
+            BulmaClass::Warning
+        }
+    }
+}
+
+pub struct HTMLReporter<'a> {
+    output_directory: &'a Path,
     syntax_set: SyntaxSet,
     path_rewriter: Option<PathRewriter>,
 }
 
-impl HTMLReporter {
-    pub fn new(config: &ReportConfig, output_directory: &str) -> Result<Self> {
+impl<'a> HTMLReporter<'a> {
+    pub fn new(config: &ReportConfig, output_directory: &'a Path) -> Result<Self> {
         let path_rewriter = if let Some((regex, replacement)) = &config.path_rewrite() {
             Some(PathRewriter::new(regex, replacement)?)
         } else {
@@ -52,220 +91,193 @@ impl HTMLReporter {
         };
 
         Ok(Self {
-            output_directory: output_directory.into(),
+            output_directory,
             syntax_set: SyntaxSet::load_defaults_newlines(),
             path_rewriter,
         })
     }
 
+    /// Instantiate Syntext HTML generator instance
+    fn instantiate_html_generator(&self, file: &str) -> Result<ClassedHTMLGenerator> {
+        let syntax = super::create_syntax_reference(&self.syntax_set, file)?;
+
+        Ok(ClassedHTMLGenerator::new_with_class_style(
+            syntax,
+            &self.syntax_set,
+            ClassStyle::Spaced,
+        ))
+    }
+
+    /// Render all lines, with included InlineMutantDescriptions
     fn generate_source_lines(
         &self,
         file: &str,
         mapping: &LineNumberMutantMap,
     ) -> Result<Vec<SourceLine>> {
-        // let file_ctx = ctx.file_context(file);
-
-        let syntax = if let Some(extension) = Path::new(file).extension() {
-            let e = extension.to_os_string().into_string().unwrap();
-            self.syntax_set
-                .find_syntax_by_extension(&e)
-                // If the extension is unknown, we just use plain text
-                .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text())
-        } else {
-            // If we don't have a file extension, we just just the plain text
-            // "highlighting"
-            self.syntax_set.find_syntax_plain_text()
-        };
-
-        let mut lines = Vec::new();
+        let mut source_lines = Vec::new();
 
         for (line_nr, line) in super::read_lines(file)?.enumerate() {
-            let line_nr = (line_nr + 1) as u64;
+            //  Iterator::enumerate is 0-based, line numbers start from 1
+            let line_nr = line_nr as u64 + 1;
             let line = line?;
 
-            let mut html_mutants = Vec::new();
-            let mut css_line_class = "is-white".into();
-            let mut killed_mutants = 0;
+            let mutants_in_given_line = mapping
+                .get(&line_nr)
+                .map(|v| v.as_slice())
+                .unwrap_or_else(|| &[]);
 
-            if let Some(mutants) = mapping.get(&line_nr) {
-                if mutants.iter().any(|m| m.outcome == MutationOutcome::Alive) {
-                    css_line_class = "is-danger".into();
-                } else if mutants.iter().all(|m| m.outcome == MutationOutcome::Killed) {
-                    css_line_class = "is-success".into();
-                } else {
-                    css_line_class = "is-warning".into();
-                }
+            let html_generator = self.instantiate_html_generator(file)?;
 
-                killed_mutants = mutants.iter().fold(0usize, |acc, m| {
-                    if m.outcome == MutationOutcome::Killed {
-                        acc + 1
-                    } else {
-                        acc
-                    }
-                });
-
-                for mutant in mutants {
-                    html_mutants.push(HTMLMutant {
-                        outcome: mutant.outcome.clone().into(),
-                        text: mutant.operator.description(),
-                    })
-                }
-            }
-
-            let mut html_generator = ClassedHTMLGenerator::new_with_class_style(
-                syntax,
-                &self.syntax_set,
-                ClassStyle::Spaced,
-            );
-
-            html_generator.parse_html_for_line_which_includes_newline(&format!("{}\n", line));
-
-            // let output_html = line;
-            let output_html = html_generator.finalize();
-            // dbg!(output_html);
-            lines.push(SourceLine {
-                line_number: line_nr,
-                number_of_mutants: html_mutants.len(),
-                number_of_killed_mutants: killed_mutants,
-                code: output_html,
-                mutants: html_mutants,
-                css_line_class,
-            })
-        }
-        Ok(lines)
-    }
-
-    fn accumulate_outcomes_for_file(&self, mutants: &LineNumberMutantMap) -> AccumulatedOutcomes {
-        let mut all_outcomes = Vec::new();
-
-        for mutants in mutants.values() {
-            all_outcomes.extend(mutants.iter());
+            source_lines.push(SourceLine::new(
+                line_nr,
+                &line,
+                mutants_in_given_line,
+                html_generator,
+            ))
         }
 
-        super::accumulate_outcomes_ref(&all_outcomes)
+        Ok(source_lines)
     }
 
-    fn create_assets(&self) -> Result<()> {
-        let output_dir = Path::new(&self.output_directory);
-
+    /// Create all static files needed for our HTML report
+    fn create_static_files(&self) -> Result<()> {
         let ts = syntect::highlighting::ThemeSet::load_defaults();
         let theme = ts.themes["InspiredGitHub"].clone();
         let css = syntect::html::css_for_theme_with_class_style(&theme, ClassStyle::Spaced);
-        std::fs::write(output_dir.join("syntax.css"), css)?;
-
-        std::fs::write(output_dir.join("style.css"), templates::CSS)?;
-        std::fs::write(output_dir.join("bulma.min.css"), templates::BULMA)?;
-        std::fs::write(output_dir.join("BULMA-LICENSE"), templates::BULMA_LICENSE)?;
+        std::fs::write(self.output_directory.join("syntax.css"), css)?;
+        std::fs::write(self.output_directory.join("style.css"), templates::CSS)?;
+        std::fs::write(
+            self.output_directory.join("bulma.min.css"),
+            templates::BULMA,
+        )?;
+        std::fs::write(
+            self.output_directory.join("BULMA-LICENSE"),
+            templates::BULMA_LICENSE,
+        )?;
 
         Ok(())
     }
-}
 
-impl Reporter for HTMLReporter {
-    fn report(&self, executed_mutants: &[super::ExecutedMutant]) -> Result<()> {
-        let file_mapping = super::map_mutants_to_files(executed_mutants);
+    /// Create the output directory
+    fn create_output_directory(&self) -> Result<()> {
+        std::fs::create_dir_all(&self.output_directory)?;
+        Ok(())
+    }
 
-        let _ = std::fs::remove_dir_all(&self.output_directory);
-        std::fs::create_dir(&self.output_directory)?;
-
-        let template_engine = init_template_engine();
-
-        let mut mutated_files = Vec::new();
-
-        let info = GeneralInfo::new();
-
+    fn render_source_files(
+        &self,
+        executed_mutants: &[ExecutedMutant],
+        report_info: &ReportInfo,
+        template_engine: &Handlebars,
+    ) -> Result<Vec<SourceFile>> {
+        let mut source_files = Vec::new();
+        let file_mapping =
+            super::map_mutants_to_files(executed_mutants, self.path_rewriter.as_ref());
         for (file, line_number_map) in file_mapping {
-            let file = if let Some(path_rewriter) = &self.path_rewriter {
-                path_rewriter.rewrite(file)
-            } else {
-                file
-            };
+            // line_number_map is map line_nr -> Vec<ExecutedMutants>
 
             let link = match self.generate_source_lines(&file, &line_number_map) {
                 Ok(lines) => {
-                    // TODO: Error handling?
-                    let output_file = generate_filename(&file);
+                    let html_filename = generate_html_filename(&file)?;
 
-                    // TODO: report directory
-                    let writer = BufWriter::new(File::create(format!(
-                        "{}/{}",
-                        self.output_directory, output_file
-                    ))?);
+                    let writer =
+                        BufWriter::new(File::create(self.output_directory.join(&html_filename))?);
 
                     let data = BTreeMap::from([
-                        ("file", handlebars::to_json(&file)),
+                        ("filename", handlebars::to_json(&file)),
                         ("lines", handlebars::to_json(lines)),
-                        ("info", handlebars::to_json(&info)),
+                        ("report_info", handlebars::to_json(report_info)),
                     ]);
 
-                    // TODO: Refactor error
-                    template_engine
-                        .render_to_write("source_view", &data, writer)
-                        .unwrap();
+                    template_engine.render_to_write("source_view", &data, writer)?;
 
-                    Some(output_file)
+                    Some(html_filename)
                 }
-                Err(_) => {
-                    log::warn!("Could not render file {file} - skipping");
+                Err(e) => {
+                    log::warn!("Could not render file {file}: {e:?} - skipping");
                     None
                 }
             };
 
-            let acc = self.accumulate_outcomes_for_file(&line_number_map);
+            let accumulated_outcomes = super::accumulate_outcomes_for_file(&line_number_map);
 
-            mutated_files.push(MutatedFile {
+            source_files.push(SourceFile {
                 name: file,
                 link,
-                mutation_score: format!("{:.1}", acc.mutation_score),
-                alive: acc.alive,
-                killed: acc.killed,
-                timeout: acc.timeout,
-                error: acc.error,
-                // TODO: would it be nicer to move this to the template, using a helper?
-                bulma_mutation_score_class: bulma_class_from_mutation_score(acc.mutation_score),
+                accumulated_outcomes: accumulated_outcomes.clone(),
             });
         }
+        Ok(source_files)
+    }
 
+    fn render_index(
+        &self,
+        executed_mutants: &[ExecutedMutant],
+        source_files: &[SourceFile],
+        report_info: &ReportInfo,
+        template_engine: &Handlebars,
+    ) -> Result<()> {
         let stats = super::accumulate_outcomes(executed_mutants);
-
-        let total_mutation_score_class = bulma_class_from_mutation_score(stats.mutation_score);
-
         let data = BTreeMap::from([
-            ("source_files", handlebars::to_json(mutated_files)),
+            ("source_files", handlebars::to_json(source_files)),
             ("file", handlebars::to_json::<Option<String>>(None)),
-            ("info", handlebars::to_json(&info)),
+            ("report_info", handlebars::to_json(&report_info)),
             ("stats", handlebars::to_json(&stats)),
-            (
-                "total_mutation_score",
-                handlebars::to_json(format!("{:.1}", stats.mutation_score)),
-            ),
-            (
-                "total_mutation_score_class",
-                handlebars::to_json(total_mutation_score_class),
-            ),
         ]);
-        let writer = BufWriter::new(File::create(format!(
-            "{}/index.html",
-            &self.output_directory
-        ))?);
-        // TODO: Refactor error
+        let writer = BufWriter::new(File::create(self.output_directory.join("index.html"))?);
         template_engine
             .render_to_write("index", &data, writer)
             .unwrap();
+        Ok(())
+    }
+}
 
-        self.create_assets()?;
+impl<'a> Reporter for HTMLReporter<'a> {
+    fn report(&self, executed_mutants: &[super::ExecutedMutant]) -> Result<()> {
+        // Prepare output directory
+        self.create_output_directory()?;
+        self.create_static_files()?;
+
+        // Initialize template engine
+        let template_engine = create_template_engine();
+
+        // Create general report info (program version, date, etc.)
+        let report_info = ReportInfo::new();
+
+        // Render individual source files
+        let source_files =
+            self.render_source_files(executed_mutants, &report_info, &template_engine)?;
+
+        // Render index.html
+        self.render_index(
+            executed_mutants,
+            &source_files,
+            &report_info,
+            &template_engine,
+        )?;
 
         Ok(())
     }
 }
 
-fn generate_filename(file: &str) -> String {
-    let s = Path::new(file).file_name().unwrap().to_str().unwrap();
-    let hash = md5::compute(s);
-    format!("{s}-{hash:?}.html")
+fn generate_html_filename(file: &str) -> Result<String> {
+    let file_name = Path::new(file)
+        .file_name()
+        .context("File has no filename")?;
+    let file_name_as_str = file_name
+        .to_str()
+        .context("Could not convert OsStr to &str")?;
+
+    let hash = md5::compute(file_name_as_str);
+    Ok(format!("{file_name_as_str}-{hash:?}.html"))
 }
 
-fn init_template_engine() -> Handlebars<'static> {
+handlebars_helper!(float_format: |x: f64| format!("{x:.1}"));
+handlebars_helper!(score_to_class: |s: f64| {
+    String::from(BulmaClass::from_mutation_score(s as f32))
+});
+
+fn create_template_engine() -> Handlebars<'static> {
     let mut handlebars = Handlebars::new();
 
     handlebars.set_strict_mode(true);
@@ -278,11 +290,15 @@ fn init_template_engine() -> Handlebars<'static> {
     handlebars
         .register_template_string("index", templates::INDEX)
         .unwrap();
+
+    handlebars.register_helper("float_format", Box::new(float_format));
+    handlebars.register_helper("score_to_class", Box::new(score_to_class));
+
     handlebars
 }
 
 #[derive(Serialize)]
-struct HTMLMutant {
+struct InlineMutantDescription {
     outcome: String,
     text: String,
 }
@@ -290,38 +306,66 @@ struct HTMLMutant {
 #[derive(Serialize)]
 struct SourceLine {
     line_number: u64,
-    number_of_killed_mutants: usize,
-    number_of_mutants: usize,
-    mutants: Vec<HTMLMutant>,
+    mutants: Vec<InlineMutantDescription>,
     code: String,
-    css_line_class: String,
+    mutant_tag_class: String,
+    accumulated_outcomes: AccumulatedOutcomes,
+}
+
+impl SourceLine {
+    fn new(
+        line_nr: u64,
+        line_content: &str,
+        mutants: &[&ExecutedMutant],
+        mut html_generator: ClassedHTMLGenerator,
+    ) -> Self {
+        // Generate HTML code for a line of source code
+        let line_including_newline = format!("{line_content}\n");
+        html_generator.parse_html_for_line_which_includes_newline(&line_including_newline);
+        let html = html_generator.finalize();
+
+        // Accumulate mutants for the given line
+        let accumulated_outcomes = super::accumulate_outcomes_ref(mutants);
+
+        // Generate inline mutant descriptions
+        let inline_mutants = mutants
+            .iter()
+            .map(|mutant| InlineMutantDescription {
+                outcome: mutant.outcome.clone().into(),
+                text: mutant.operator.description(),
+            })
+            .collect();
+
+        SourceLine {
+            line_number: line_nr,
+            code: html,
+            mutants: inline_mutants,
+            mutant_tag_class: BulmaClass::from(accumulated_outcomes.clone()).into(),
+            accumulated_outcomes,
+        }
+    }
 }
 
 #[derive(Serialize)]
-struct MutatedFile {
+struct SourceFile {
     name: String,
     link: Option<String>,
-    mutation_score: String,
-    alive: i32,
-    killed: i32,
-    error: i32,
-    timeout: i32,
-    bulma_mutation_score_class: String,
+    accumulated_outcomes: AccumulatedOutcomes,
 }
 
 #[derive(Serialize)]
-struct GeneralInfo {
+struct ReportInfo {
     program_name: String,
     program_version: String,
     date: String,
     time: String,
 }
 
-impl GeneralInfo {
+impl ReportInfo {
     fn new() -> Self {
         let current_time = Local::now();
 
-        GeneralInfo {
+        ReportInfo {
             program_name: String::from(env!("CARGO_PKG_NAME")),
             program_version: String::from(env!("CARGO_PKG_VERSION")),
             date: format!("{}", current_time.format("%Y-%m-%d")),
@@ -334,27 +378,60 @@ impl GeneralInfo {
 mod tests {
     use super::*;
     use anyhow::Result;
+    use quickcheck::quickcheck;
+    use tempfile::tempdir;
 
-    // #[test]
-    // fn generate_source_lines_no_mutants() -> Result<()> {
-    //     let ctx = SyntectContext::default();
-    //     let result =
-    //         generate_source_lines("testdata/simple_add/simple_add.c", &BTreeMap::new(), &ctx)?;
-    //     assert_eq!(result.len(), 4);
-    //     Ok(())
-    // }
+    #[test]
+    fn generate_source_lines_no_mutants() -> Result<()> {
+        let output = tempdir()?;
 
-    // #[test]
-    // fn generate_source_lines_invalid_file() -> Result<()> {
-    //     let ctx = SyntectContext::default();
-    //     assert!(generate_source_lines("testdata/invalid_file.c", &BTreeMap::new(), &ctx).is_err());
-    //     Ok(())
-    // }
+        let reporter = HTMLReporter::new(&ReportConfig::default(), output.path())?;
+
+        let result =
+            reporter.generate_source_lines("testdata/simple_add/simple_add.c", &BTreeMap::new())?;
+        assert_eq!(result.len(), 4);
+        Ok(())
+    }
+
+    #[test]
+    fn generate_source_lines_invalid_file() -> Result<()> {
+        let output = tempdir()?;
+
+        let reporter = HTMLReporter::new(&ReportConfig::default(), output.path())?;
+
+        let result = reporter.generate_source_lines("testdata/invalid/invalid.c", &BTreeMap::new());
+        assert!(result.is_err());
+        Ok(())
+    }
 
     #[test]
     fn generate_filename_for_simple_add() -> Result<()> {
-        let s = generate_filename("/home/lukas/Repos/wasmut/testdata/simple_add/simple_add.c");
+        let s =
+            generate_html_filename("/home/lukas/Repos/wasmut/testdata/simple_add/simple_add.c")?;
         assert_eq!(&s, "simple_add.c-fa92c051d002ff3e94998e6acfc1f707.html");
         Ok(())
+    }
+
+    quickcheck! {
+        fn test_bulma_class(mutation_score: f32) -> bool {
+            let class: String = BulmaClass::from_mutation_score(mutation_score).into();
+            if (0.0..50.0).contains(&mutation_score) {
+                class == "is-danger"
+            } else if (50.0..75.0).contains(&mutation_score) {
+                class == "is-warning"
+            } else if (75.0..=100.0).contains(&mutation_score) {
+                class == "is-success"
+            } else {
+                class.is_empty()
+            }
+        }
+    }
+
+    #[test]
+    fn test_bulma_class_boundaries() {
+        assert_eq!(BulmaClass::from_mutation_score(0.0), BulmaClass::Danger);
+        assert_eq!(BulmaClass::from_mutation_score(50.0), BulmaClass::Warning);
+        assert_eq!(BulmaClass::from_mutation_score(75.0), BulmaClass::Success);
+        assert_eq!(BulmaClass::from_mutation_score(100.0), BulmaClass::Success);
     }
 }

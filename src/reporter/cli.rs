@@ -62,12 +62,13 @@ impl CLIReporter {
 
     fn enumerate_mutants(&self, executed_mutants: &[ExecutedMutant]) -> Result<()> {
         // Get a map filename -> (LineNumberMutantMap)
-        let file_map: super::FileMutantMap = super::map_mutants_to_files(executed_mutants);
+        let file_map: super::FileMutantMap =
+            super::map_mutants_to_files(executed_mutants, self.path_rewriter.as_ref());
 
         for (file, line_map) in file_map {
             // line_map is map line_nr -> Vec<ExecutedMutants>
 
-            let highlighter = self.highlighter_context.file_context(file);
+            let highlighter = self.highlighter_context.file_context(file)?;
 
             for (_, mutants) in line_map {
                 for mutant in mutants {
@@ -94,13 +95,7 @@ impl CLIReporter {
             if let Some(line_nr) = mutant.location.line {
                 file_line_col += &format!(":{line_nr}");
 
-                let file = if let Some(path_rewriter) = &self.path_rewriter {
-                    path_rewriter.rewrite(file)
-                } else {
-                    file.into()
-                };
-
-                match Self::get_line_from_file(&file, line_nr) {
+                match Self::get_line_from_file(file, line_nr) {
                     Ok(line) => {
                         line_in_file = if self.should_colorize {
                             highlighter.terminal_string(&line)

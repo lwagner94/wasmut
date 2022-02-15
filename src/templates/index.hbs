@@ -23,25 +23,25 @@
       {{this.name}}
       {{/if}}
     </td>
-    <td>{{this.mutation_score}}%</td>
+    <td>{{(float_format this.accumulated_outcomes.mutation_score)}}%</td>
     <td>
-      <progress class="progress is-large {{this.bulma_mutation_score_class}}" value="{{this.mutation_score}}"
-        max="100">{{this.mutation_score}}</progress>
+      <progress class="progress is-large {{(score_to_class this.accumulated_outcomes.mutation_score)}}" value="{{this.accumulated_outcomes.mutation_score}}"
+        max="100">{{(float_format this.accumulated_outcomes.mutation_score)}}</progress>
     </td>
-    <td>{{this.alive}}</td>
-    <td>{{this.killed}}</td>
-    <td>{{this.error}}</td>
-    <td>{{this.timeout}}</td>
+    <td>{{this.accumulated_outcomes.alive}}</td>
+    <td>{{this.accumulated_outcomes.killed}}</td>
+    <td>{{this.accumulated_outcomes.error}}</td>
+    <td>{{this.accumulated_outcomes.timeout}}</td>
     </tr>
     {{/each}}
 
 
     <tr>
       <td>Total</td>
-      <td>{{total_mutation_score}}%</td>
+      <td>{{(float_format stats.mutation_score)}}%</td>
     <td>
-      <progress class="progress is-large {{total_mutation_score_class}}" value="{{total_mutation_score}}"
-        max="100">{{total_mutation_score}}</progress>
+      <progress class="progress is-large {{(score_to_class stats.mutation_score)}}" value="{{stats.mutation_score}}"
+        max="100">{{(float_format stats.mutation_score)}}</progress>
     </td>
     <td>{{stats.alive}}</td>
     <td>{{stats.killed}}</td>

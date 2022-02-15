@@ -45,6 +45,7 @@ chrono = "0.4.19"
 [dev-dependencies]
 criterion = "0.3"
 tempfile = "3.3.0"
+quickcheck = "1.0.3"
 
 [[bench]]
 name = "runtime"

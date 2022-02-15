@@ -1,52 +1,18 @@
 {{#*inline "page"}}
 
-
-{{!-- <div class="filename-container">
-  <span class="filename-text">{{file}}</span>
-</div> --}}
-{{!-- <table class="source-table">
-  {{#each lines}}
-  <tr>
-    {{#if this.number_of_mutants}}
-    <td class="mutant-counter">
-      <button class="bt-show-mutant"
-        onclick="showMutant('mutants-line-{{@index}}')">{{this.number_of_killed_mutants}}/{{this.number_of_mutants}}</button>
-    </td>
-    {{else}}
-    <td></td>
-    {{/if}}
-    <td class="line-number line-class-{{this.css_line_class}}">
-      <a id="{{this.line_number}}" href="#{{this.line_number}}">{{this.line_number}}</a>
-    </td>
-
-
-    <td class="source-line line-class-{{this.css_line_class}}">{{{this.code}}}</td>
-  </tr>
-
-  {{#each this.mutants}}
-  <tr class="mutants-line-{{@../index}} hide-mutant-list">
-    <td></td>
-    <td class="inline-mutant-list"></td>
-    <td class="inline-mutant-list">{{this.outcome}}: {{this.text}}</td>
-  </tr>
-  {{/each}}
-
-  {{/each}}
-</table> --}}
-
 <div class="code-lines container">
   {{#each lines}}
   <div class="columns">
     <div class="column ">
       <div class="columns">
         <div class="column is-half">
-          {{#if this.number_of_mutants}}
+          {{#if this.accumulated_outcomes.total}}
           {{!-- <button class="button is-small is-success is-light"
             onclick="showMutant('mutants-line-{{@index}}')">{{this.number_of_killed_mutants}}/{{this.number_of_mutants}}</button>
           --}}
 
-          <span class="tag {{this.css_line_class}} is-light">
-            <a onclick="showMutant('mutants-line-{{@index}}')">{{this.number_of_killed_mutants}}/{{this.number_of_mutants}}</a>
+          <span class="tag {{this.mutant_tag_class}} is-light">
+            <a onclick="showMutant('mutants-line-{{@index}}')">{{this.accumulated_outcomes.killed}}/{{this.accumulated_outcomes.total}}</a>
           </span>
           {{else}}
 
