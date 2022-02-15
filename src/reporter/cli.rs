@@ -174,7 +174,7 @@ mod tests {
         let config = Config::parse_str(
             r#"
             [report]
-            path_rewrite = ["/home/lukas/Repos/wasmut/", ""]
+            path_rewrite = ["^.*/wasmut/", ""]
         "#,
         )
         .unwrap();
@@ -190,7 +190,7 @@ mod tests {
     fn cli_reporter_single_mutant() {
         let executed_mutants = vec![ExecutedMutant {
             location: CodeLocation {
-                file: Some("/home/lukas/Repos/wasmut/testdata/simple_add/simple_add.c".into()),
+                file: Some("/home/user/Repos/wasmut/testdata/simple_add/simple_add.c".into()),
                 function: Some("add".into()),
                 line: Some(3),
                 column: Some(14),
@@ -204,7 +204,7 @@ mod tests {
 
         let output = report_to_string(executed_mutants);
 
-        assert!(output.contains("/home/lukas/Repos/wasmut/testdata/simple_add/simple_add.c:3:14"));
+        assert!(output.contains("testdata/simple_add/simple_add.c:3:14"));
         assert!(output.contains("return"));
         assert!(output.contains("TIMEOUT"));
     }
@@ -214,7 +214,7 @@ mod tests {
         let executed_mutants = vec![
             ExecutedMutant {
                 location: CodeLocation {
-                    file: Some("/home/lukas/Repos/wasmut/testdata/simple_add/simple_add.c".into()),
+                    file: Some("/home/user/Repos/wasmut/testdata/simple_add/simple_add.c".into()),
                     function: Some("add".into()),
                     line: Some(3),
                     column: Some(14),
@@ -227,7 +227,7 @@ mod tests {
             },
             ExecutedMutant {
                 location: CodeLocation {
-                    file: Some("/home/lukas/Repos/wasmut/testdata/simple_add/simple_add.c".into()),
+                    file: Some("/home/user/Repos/wasmut/testdata/simple_add/simple_add.c".into()),
                     function: Some("add".into()),
                     line: Some(3),
                     column: Some(14),
@@ -240,7 +240,7 @@ mod tests {
             },
             ExecutedMutant {
                 location: CodeLocation {
-                    file: Some("/home/lukas/Repos/wasmut/testdata/simple_add/simple_add.c".into()),
+                    file: Some("/home/user/Repos/wasmut/testdata/simple_add/simple_add.c".into()),
                     function: Some("add".into()),
                     line: Some(3),
                     column: Some(14),
@@ -253,7 +253,7 @@ mod tests {
             },
             ExecutedMutant {
                 location: CodeLocation {
-                    file: Some("/home/lukas/Repos/wasmut/testdata/simple_add/simple_add.c".into()),
+                    file: Some("/home/user/Repos/wasmut/testdata/simple_add/simple_add.c".into()),
                     function: Some("add".into()),
                     line: Some(3),
                     column: Some(14),
