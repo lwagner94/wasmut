@@ -68,11 +68,11 @@ impl CLIReporter {
         for (file, line_map) in file_map {
             // line_map is map line_nr -> Vec<ExecutedMutants>
 
-            let highlighter = self.highlighter_context.file_context(file)?;
+            let highlighter = self.highlighter_context.file_context(&file)?;
 
             for (_, mutants) in line_map {
                 for mutant in mutants {
-                    self.print_mutant(mutant, &highlighter);
+                    self.print_mutant(&file, mutant, &highlighter);
                     // if mutant.outcome == MutationOutcome::Alive {
 
                     // }
@@ -83,13 +83,13 @@ impl CLIReporter {
         Ok(())
     }
 
-    fn print_mutant(&self, mutant: &ExecutedMutant, highlighter: &SyntectFileContext) {
+    fn print_mutant(&self, file: &str, mutant: &ExecutedMutant, highlighter: &SyntectFileContext) {
         let mut file_line_col = String::new();
 
         let mut line_in_file = String::new();
         let mut column_indicator = String::new();
 
-        if let Some(file) = mutant.location.file.as_deref() {
+        if mutant.location.file.as_deref().is_some() {
             file_line_col += file;
 
             if let Some(line_nr) = mutant.location.line {
@@ -118,8 +118,6 @@ impl CLIReporter {
 
         let description = mutant.operator.description();
         let outcome: ColoredString = mutant.outcome.clone().into();
-
-        // let status = color.paint(format!("{:?}", mutant.outcome));
 
         let color_reset = "\x1b[0m";
         output::output_string(
