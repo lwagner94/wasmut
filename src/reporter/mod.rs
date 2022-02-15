@@ -4,6 +4,7 @@ mod rewriter;
 
 use std::{
     collections::BTreeMap,
+    convert::AsRef,
     fs::File,
     io::BufReader,
     io::{BufRead, Lines},
@@ -129,46 +130,24 @@ pub struct AccumulatedOutcomes {
     pub mutation_score: f32,
 }
 
-pub fn accumulate_outcomes(executed_mutants: &[ExecutedMutant]) -> AccumulatedOutcomes {
-    let (alive, timeout, killed, error) =
-        executed_mutants
-            .iter()
-            .fold(
-                (0, 0, 0, 0),
-                |(alive, timeout, killed, error), outcome| match outcome.outcome {
-                    MutationOutcome::Alive => (alive + 1, timeout, killed, error),
-                    MutationOutcome::Killed => (alive, timeout, killed + 1, error),
-                    MutationOutcome::Timeout => (alive, timeout + 1, killed, error),
-                    MutationOutcome::Error => (alive, timeout, killed, error + 1),
-                },
-            );
-    let mutation_score =
-        100f32 * (timeout + killed + error) as f32 / (alive + timeout + killed + error) as f32;
-
-    AccumulatedOutcomes {
-        total: executed_mutants.len() as i32,
-        alive,
-        timeout,
-        killed,
-        error,
-        mutation_score,
+impl AsRef<ExecutedMutant> for ExecutedMutant {
+    fn as_ref(&self) -> &ExecutedMutant {
+        self
     }
 }
 
-// TODO: Make this and the function above generic!
-pub fn accumulate_outcomes_ref(executed_mutants: &[&ExecutedMutant]) -> AccumulatedOutcomes {
-    let (alive, timeout, killed, error) =
-        executed_mutants
-            .iter()
-            .fold(
-                (0, 0, 0, 0),
-                |(alive, timeout, killed, error), outcome| match outcome.outcome {
-                    MutationOutcome::Alive => (alive + 1, timeout, killed, error),
-                    MutationOutcome::Killed => (alive, timeout, killed + 1, error),
-                    MutationOutcome::Timeout => (alive, timeout + 1, killed, error),
-                    MutationOutcome::Error => (alive, timeout, killed, error + 1),
-                },
-            );
+pub fn accumulate_outcomes<E: AsRef<ExecutedMutant>>(
+    executed_mutants: &[E],
+) -> AccumulatedOutcomes {
+    let (alive, timeout, killed, error) = executed_mutants.iter().map(|e| e.as_ref()).fold(
+        (0, 0, 0, 0),
+        |(alive, timeout, killed, error), outcome| match outcome.outcome {
+            MutationOutcome::Alive => (alive + 1, timeout, killed, error),
+            MutationOutcome::Killed => (alive, timeout, killed + 1, error),
+            MutationOutcome::Timeout => (alive, timeout + 1, killed, error),
+            MutationOutcome::Error => (alive, timeout, killed, error + 1),
+        },
+    );
     let mutation_score =
         100f32 * (timeout + killed + error) as f32 / (alive + timeout + killed + error) as f32;
 
@@ -183,13 +162,13 @@ pub fn accumulate_outcomes_ref(executed_mutants: &[&ExecutedMutant]) -> Accumula
 }
 
 pub fn accumulate_outcomes_for_file(mutants: &LineNumberMutantMap) -> AccumulatedOutcomes {
-    let mut all_outcomes = Vec::new();
+    let mut all_outcomes: Vec<&ExecutedMutant> = Vec::new();
 
     for mutants in mutants.values() {
         all_outcomes.extend(mutants.iter());
     }
 
-    accumulate_outcomes_ref(&all_outcomes)
+    accumulate_outcomes(&all_outcomes)
 }
 
 struct SyntectContext {

@@ -325,7 +325,7 @@ impl SourceLine {
         let html = html_generator.finalize();
 
         // Accumulate mutants for the given line
-        let accumulated_outcomes = super::accumulate_outcomes_ref(mutants);
+        let accumulated_outcomes = super::accumulate_outcomes(mutants);
 
         // Generate inline mutant descriptions
         let inline_mutants = mutants
