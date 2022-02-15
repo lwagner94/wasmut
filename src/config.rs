@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
-use crate::{defaults::TIMEOUT_MULTIPLIER, templates};
+use crate::templates;
 use serde::Deserialize;
+
+pub const TIMEOUT_MULTIPLIER: f64 = 2.0;
 
 #[derive(Deserialize, Default)]
 pub struct FilterConfig {

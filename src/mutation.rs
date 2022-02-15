@@ -91,8 +91,8 @@ mod tests {
         let mut mutant = module.clone();
         mutant.mutate(&positions[0]);
 
-        let mutated_bytecode: Vec<u8> = mutant.try_into().unwrap();
-        let original_bytecode: Vec<u8> = module.try_into().unwrap();
+        let mutated_bytecode: Vec<u8> = mutant.to_bytes().unwrap();
+        let original_bytecode: Vec<u8> = module.to_bytes().unwrap();
 
         assert_ne!(mutated_bytecode, original_bytecode);
         Ok(())

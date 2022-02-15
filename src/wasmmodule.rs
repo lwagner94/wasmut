@@ -7,7 +7,6 @@ use anyhow::{Context, Result};
 
 use rayon::prelude::*;
 
-// TODO: Encapsulate parity_wasm::Instruction in own type?
 pub type CallbackType<'a, R> =
     &'a (dyn Fn(&Instruction, &InstructionWalkerLocation) -> Vec<R> + Send + Sync);
 
@@ -54,8 +53,7 @@ pub enum CallRemovalCandidate {
 #[derive(Clone)]
 pub struct WasmModule {
     module: parity_wasm::elements::Module,
-    // TODO: Make this cleaner
-    pub bytes: Vec<u8>,
+    bytes: Vec<u8>,
 }
 
 impl WasmModule {
@@ -236,12 +234,19 @@ impl WasmModule {
 
         Ok(candidates)
     }
-}
 
-impl TryFrom<WasmModule> for Vec<u8> {
-    type Error = anyhow::Error;
-    fn try_from(module: WasmModule) -> Result<Vec<u8>> {
-        parity_wasm::serialize(module.module).context("Failed to serialize module")
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        parity_wasm::serialize(self.module.clone()).context("Failed to serialize module")
+    }
+
+    pub fn mutated_clone(&self, mutation: &Mutation) -> Self {
+        let mut mutant = self.clone();
+        mutant.mutate(mutation);
+        mutant
+    }
+
+    pub fn original_bytes(&self) -> &[u8] {
+        &self.bytes
     }
 }
 
@@ -266,7 +271,7 @@ mod tests {
     #[test]
     fn test_into_buffer() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        let _: Vec<u8> = module.try_into()?;
+        let _: Vec<u8> = module.to_bytes()?;
         Ok(())
     }
 

@@ -64,7 +64,7 @@ pub fn prepare_results(
     mutations: Vec<Mutation>,
     results: Vec<ExecutionResult>,
 ) -> Vec<ExecutedMutant> {
-    let resolver = AddressResolver::new(&module.bytes);
+    let resolver = AddressResolver::new(module.original_bytes());
 
     if mutations.len() != results.len() {
         panic!("Mutation/Execution result length mismatch, this is a bug!");

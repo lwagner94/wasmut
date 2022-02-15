@@ -1,1 +1,0 @@
-pub const TIMEOUT_MULTIPLIER: f64 = 2.0;

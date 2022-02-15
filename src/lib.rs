@@ -1,7 +1,6 @@
 pub mod addressresolver;
 pub mod cliarguments;
 pub mod config;
-pub mod defaults;
 pub mod executor;
 pub mod mutation;
 pub mod operator;

@@ -22,8 +22,7 @@ impl<'a> Executor<'a> {
     }
 
     pub fn execute(&self, module: &WasmModule) -> Result<()> {
-        // TODO: should the runtime own the module? If not, we can remove the clone here.
-        let mut runtime = runtime::create_runtime(module.clone(), false, self.mapped_dirs)?;
+        let mut runtime = runtime::create_runtime(module, false, self.mapped_dirs)?;
 
         // TODO: Code duplication?
         match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
@@ -51,7 +50,7 @@ impl<'a> Executor<'a> {
         module: &WasmModule,
         mutations: &[Mutation],
     ) -> Result<Vec<ExecutionResult>> {
-        let mut runtime = runtime::create_runtime(module.clone(), true, self.mapped_dirs)?;
+        let mut runtime = runtime::create_runtime(module, true, self.mapped_dirs)?;
 
         let execution_cost = match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
             ExecutionResult::ProcessExit {
@@ -74,24 +73,17 @@ impl<'a> Executor<'a> {
         let limit = (execution_cost as f64 * self.timeout_multiplier).ceil() as u64;
         log::info!("Setting timeout to {limit} cycles");
 
-        let hidden = false;
-        let pb = if !hidden {
-            ProgressBar::new(mutations.len() as u64)
-        } else {
-            ProgressBar::hidden()
-        };
+        let pb = ProgressBar::new(mutations.len() as u64);
 
         let outcomes = mutations
             .par_iter()
             .progress_with(pb.clone())
             .map(|mutation| {
-                // TODO: Remove mut by having clone_mutated() or something
-                let mut module = module.clone();
-                module.mutate(mutation);
+                let module = module.mutated_clone(mutation);
 
                 let policy = ExecutionPolicy::RunUntilLimit { limit };
 
-                let mut runtime = runtime::create_runtime(module, true, self.mapped_dirs).unwrap();
+                let mut runtime = runtime::create_runtime(&module, true, self.mapped_dirs).unwrap();
                 runtime.call_test_function(policy).unwrap()
             })
             .collect();
