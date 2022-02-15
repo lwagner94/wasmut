@@ -5,19 +5,34 @@ use crate::wasmmodule::CallbackType;
 use crate::{config::Config, policy::MutationPolicy, wasmmodule::WasmModule};
 use anyhow::Result;
 
+/// Definition of a position where and how a module is mutated.
 pub struct Mutation {
+    /// The index in the module's function table
     pub function_number: u64,
+
+    /// The index of the instruction to be mutated, relative to the start
+    /// of the function
     pub statement_number: u64,
+
+    /// The offset in bytes relative to the start of the code section
     pub offset: u64,
+
+    /// The mutation operator that is to be applied
     pub operator: Box<dyn InstructionReplacement>,
 }
 
+/// Used for discovering possible mutants based on
+/// the module and a set of operators.
 pub struct MutationEngine {
+    /// The policy used to filter mutant candidates.
     mutation_policy: MutationPolicy,
+
+    /// A list of all operators that are to be enabled.
     enabled_operators: Vec<String>,
 }
 
 impl MutationEngine {
+    /// Create a new `MutationEngine`, based on a configuration.
     pub fn new(config: &Config) -> Result<Self> {
         Ok(Self {
             mutation_policy: MutationPolicy::from_config(config)?,
@@ -25,40 +40,41 @@ impl MutationEngine {
         })
     }
 
+    /// Discover all mutation candidates in a module.
+    ///
+    /// This method will return a vector of `Mutation` structs, representing the
+    /// candidates.
     pub fn discover_mutation_positions(&self, module: &WasmModule) -> Result<Vec<Mutation>> {
-        let ops = self
-            .enabled_operators
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>();
+        // Instantiate operator registry
+        let registry = OperatorRegistry::new(&self.enabled_operators)?;
 
-        let registry = OperatorRegistry::new(&ops)?;
+        // Find functions with no return / scalar return value.
+        // Calls to those functions may be removed by call_remove* operators
+        let call_removal_candidates = module.call_removal_candidates()?;
+        let context = InstructionContext::new(call_removal_candidates);
 
-        let r = &registry;
+        // Define a callback function that is used by wasmmodule::instruction_walker
+        // The callback is called for every single instruction of the module
+        // and is passed the instruction and the location within
+        // the module.
+        let callback: CallbackType<Mutation> = &|instruction, location| {
+            if self.mutation_policy.check(location.file, location.function) {
+                registry
+                    .mutants_for_instruction(instruction, &context)
+                    .into_iter()
+                    .map(|operator| Mutation {
+                        function_number: location.function_index,
+                        statement_number: location.instruction_index,
+                        offset: location.instruction_offset,
+                        operator,
+                    })
+                    .collect()
+            } else {
+                vec![]
+            }
+        };
 
-        let c = module.call_removal_candidates()?;
-
-        let context = InstructionContext::new(c);
-
-        let callback: CallbackType<Mutation> =
-            &|instruction, location| {
-                let mut mutations = Vec::new();
-
-                if self.mutation_policy.check(location.file, location.function) {
-                    mutations.extend(r.from_instruction(instruction, &context).into_iter().map(
-                        |op| Mutation {
-                            function_number: location.function_index,
-                            statement_number: location.instruction_index,
-                            offset: location.instruction_offset,
-                            operator: op,
-                        },
-                    ));
-                }
-
-                mutations
-            };
-
-        let mutations = module.instruction_walker::<Mutation>(callback).unwrap();
+        let mutations = module.instruction_walker::<Mutation>(callback)?;
         log::info!("Generated {} mutations", mutations.len());
         Ok(mutations)
     }

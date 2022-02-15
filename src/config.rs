@@ -4,38 +4,50 @@ use std::path::Path;
 use crate::templates;
 use serde::Deserialize;
 
+/// Default value for the `timeout_multiplier` configuration key
 pub const TIMEOUT_MULTIPLIER: f64 = 2.0;
 
+/// Configuration for mutant filtering.
 #[derive(Deserialize, Default)]
 pub struct FilterConfig {
+    /// Regex list of all files that should be mutated
     allowed_files: Option<Vec<String>>,
+
+    /// Regex list of all functions that should be mutated
     allowed_functions: Option<Vec<String>>,
 }
 
 impl FilterConfig {
+    /// Get list of regular expressions of all files that should be mutated
     pub fn allowed_files(&self) -> Option<&Vec<String>> {
         self.allowed_files.as_ref()
     }
 
+    /// Get list of regular expressions of all functions that should be mutated
     pub fn allowed_functions(&self) -> Option<&Vec<String>> {
         self.allowed_functions.as_ref()
     }
 }
 
+/// Configuration for the execution engine
 #[derive(Deserialize, Default)]
 pub struct EngineConfig {
+    /// Execution timeout multiplier. timeout will be
+    /// set to cycles measured in baseline run multiplied by this factor
     timeout_multiplier: Option<f64>,
+
+    /// A list of all directories that are to be mapped into the runtime
     map_dirs: Option<Vec<(String, String)>>,
 }
 
 impl EngineConfig {
+    /// Execution timeout multiplier
     pub fn timeout_multiplier(&self) -> f64 {
         self.timeout_multiplier.unwrap_or(TIMEOUT_MULTIPLIER)
     }
 
+    /// A list of all directories that are to be mapped into the runtime
     pub fn map_dirs(&self) -> &[(String, String)] {
-        //
-
         if let Some(map_dirs) = self.map_dirs.as_ref() {
             map_dirs.as_slice()
         } else {
@@ -44,24 +56,31 @@ impl EngineConfig {
     }
 }
 
+/// Configuration regarding report generation
 #[derive(Deserialize, Default)]
 pub struct ReportConfig {
+    /// Rewrite paths using Regex::replace
     path_rewrite: Option<(String, String)>,
 }
 
 impl ReportConfig {
+    /// Return path replacement configuration
     pub fn path_rewrite(&self) -> Option<(&str, &str)> {
         self.path_rewrite
             .as_ref()
             .map(|(regex, replacement)| (regex.as_ref(), replacement.as_ref()))
     }
 }
+
+/// Configuration for mutation operators
 #[derive(Deserialize, Default)]
 pub struct OperatorConfig {
+    /// (Regex) list of all enabled mutation operators
     enabled_operators: Option<Vec<String>>,
 }
 
 impl OperatorConfig {
+    /// Return a (regex) list of all enabled mutation operators
     pub fn enabled_operators(&self) -> Vec<String> {
         self.enabled_operators
             .clone()
@@ -69,6 +88,7 @@ impl OperatorConfig {
     }
 }
 
+/// Main toml configuration
 #[derive(Deserialize)]
 pub struct Config {
     engine: Option<EngineConfig>,
@@ -89,10 +109,7 @@ impl Default for Config {
 }
 
 impl Config {
-    pub fn parse_str(s: &str) -> Result<Self> {
-        Self::parse(s)
-    }
-
+    /// Save default configuration to given path
     pub fn save_default_config<P: AsRef<Path>>(path: P) -> Result<()> {
         let p = path.as_ref();
         std::fs::write(p, templates::DEFAULT_CONFIG)
@@ -100,6 +117,7 @@ impl Config {
         Ok(())
     }
 
+    /// Parse configuration at a given path
     pub fn parse_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let p = path.as_ref();
 
@@ -109,7 +127,8 @@ impl Config {
         Self::parse(&s)
     }
 
-    fn parse(s: &str) -> Result<Self> {
+    /// Parse configuration from string
+    pub fn parse(s: &str) -> Result<Self> {
         let mut config: Config = toml::from_str(s)?;
 
         if config.engine.is_none() {
@@ -130,18 +149,22 @@ impl Config {
         Ok(config)
     }
 
+    /// Return engine subsection
     pub fn engine(&self) -> &EngineConfig {
         self.engine.as_ref().unwrap()
     }
 
+    /// Return filter subsection
     pub fn filter(&self) -> &FilterConfig {
         self.filter.as_ref().unwrap()
     }
 
+    /// Return report subsection
     pub fn report(&self) -> &ReportConfig {
         self.report.as_ref().unwrap()
     }
 
+    /// Return operators subsection
     pub fn operators(&self) -> &OperatorConfig {
         self.operators.as_ref().unwrap()
     }

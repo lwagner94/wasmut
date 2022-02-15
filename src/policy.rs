@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn policy_from_config() -> Result<()> {
-        let config = Config::parse_str(
+        let config = Config::parse(
             r#"
         [filter]
         allowed_functions = ["^test"]

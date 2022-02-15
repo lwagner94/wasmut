@@ -8,12 +8,19 @@ use anyhow::{bail, Result};
 
 use rayon::prelude::*;
 
+/// Execution engine for WebAssembly modules
 pub struct Executor<'a> {
+    /// Timeout multiplier used when executing mutants
+    /// Timeout in cycles is calculated by multiplying
+    /// this factor with the measured number of cycles
     timeout_multiplier: f64,
+
+    /// List of directory mappings
     mapped_dirs: &'a [(String, String)],
 }
 
 impl<'a> Executor<'a> {
+    /// Create `Executor` based on wasmut configuration
     pub fn new(config: &'a Config) -> Self {
         Executor {
             timeout_multiplier: config.engine().timeout_multiplier(),
@@ -21,6 +28,9 @@ impl<'a> Executor<'a> {
         }
     }
 
+    /// Execute a WebAssembly module, without performing any mutations.
+    ///
+    /// The stdout/stderr output of the module will not be supressed
     pub fn execute(&self, module: &WasmModule) -> Result<()> {
         let mut runtime = runtime::create_runtime(module, false, self.mapped_dirs)?;
 
@@ -45,6 +55,9 @@ impl<'a> Executor<'a> {
         Ok(())
     }
 
+    /// Execute mutants and gather results
+    ///
+    /// During execution, stdout and stderr are supressed
     pub fn execute_mutants(
         &self,
         module: &WasmModule,

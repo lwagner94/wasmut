@@ -171,7 +171,7 @@ mod tests {
     }
 
     fn report_to_string(executed_mutants: Vec<ExecutedMutant>) -> String {
-        let config = Config::parse_str(
+        let config = Config::parse(
             r#"
             [report]
             path_rewrite = ["^.*/wasmut/", ""]

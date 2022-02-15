@@ -68,7 +68,7 @@ macro_rules! register_operator {
 }
 
 impl OperatorRegistry {
-    pub fn new(enabled_ops: &[&str]) -> Result<Self> {
+    pub fn new<S: AsRef<str>>(enabled_ops: &[S]) -> Result<Self> {
         let mut registry: OperatorRegistry = Default::default();
 
         let regex_set = regex::RegexSet::new(enabled_ops).unwrap();
@@ -121,7 +121,7 @@ impl OperatorRegistry {
         Ok(registry)
     }
 
-    pub fn from_instruction(
+    pub fn mutants_for_instruction(
         &self,
         instruction: &Instruction,
         context: &InstructionContext,
@@ -136,7 +136,8 @@ impl OperatorRegistry {
         results
     }
 
-    pub fn number_of_operators(&self) -> usize {
+    #[allow(dead_code)]
+    fn number_of_operators(&self) -> usize {
         self.operators.len()
     }
 
@@ -166,7 +167,7 @@ mod tests {
                     let registry = OperatorRegistry::new([enabled_operator].as_slice()).unwrap();
                     let context = Default::default();
 
-                    let ops = registry.from_instruction(&$original, &context);
+                    let ops = registry.mutants_for_instruction(&$original, &context);
                     assert!(ops.len() > 0);
 
                     let mut found = false;
@@ -190,10 +191,11 @@ mod tests {
                 #[allow(non_snake_case)]
                 #[test]
                 fn test_name() {
-                    let registry = OperatorRegistry::new([].as_slice()).unwrap();
+                    let enabled_ops: &[String] = [].as_slice();
+                    let registry = OperatorRegistry::new(enabled_ops).unwrap();
                     let instr = $original;
                     let context = Default::default();
-                    let ops = registry.from_instruction(&instr, &context);
+                    let ops = registry.mutants_for_instruction(&instr, &context);
                     assert_eq!(ops.len(), 0);
                 }
             });
@@ -209,7 +211,7 @@ mod tests {
                     let enabled_operator = stringify!($operator);
                     let registry = OperatorRegistry::new([enabled_operator].as_slice()).unwrap();
                     let context = Default::default();
-                    let ops = registry.from_instruction(&$original, &context);
+                    let ops = registry.mutants_for_instruction(&$original, &context);
                     assert_eq!(ops.len(), 1);
 
                     let mut instr = vec![$original];
@@ -225,10 +227,10 @@ mod tests {
                 #[allow(non_snake_case)]
                 #[test]
                 fn test_name() {
-                    let registry = OperatorRegistry::new([].as_slice()).unwrap();
+                    let registry = OperatorRegistry::new([].as_slice() as &[&str]).unwrap();
                     let instr = $original;
                     let context = Default::default();
-                    let ops = registry.from_instruction(&instr, &context);
+                    let ops = registry.mutants_for_instruction(&instr, &context);
                     assert_eq!(ops.len(), 0);
                 }
             });
@@ -399,7 +401,7 @@ mod tests {
             params: 2,
         }]);
 
-        let ops = registry.from_instruction(&Call(0), &context);
+        let ops = registry.mutants_for_instruction(&Call(0), &context);
         assert_eq!(ops.len(), 1);
 
         let mut instructions = vec![I32Const(10), I32Const(12), Call(0), I32Const(13), Call(1)];
@@ -421,12 +423,12 @@ mod tests {
 
     #[test]
     fn call_remove_void_call_disabled() {
-        let registry = OperatorRegistry::new([].as_slice()).unwrap();
+        let registry = OperatorRegistry::new([].as_slice() as &[&str]).unwrap();
         let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningVoid {
             index: 0,
             params: 2,
         }]);
-        let ops = registry.from_instruction(&Call(0), &context);
+        let ops = registry.mutants_for_instruction(&Call(0), &context);
         assert_eq!(ops.len(), 0);
     }
 
@@ -444,7 +446,7 @@ mod tests {
                         return_type: Datatype::$datatype,
                     }]);
 
-                    let ops = registry.from_instruction(&Call(0), &context);
+                    let ops = registry.mutants_for_instruction(&Call(0), &context);
                     assert_eq!(ops.len(), 1);
 
                     let mut instructions = vec![I32Const(10), I32Const(12), Call(0), I32Const(13), Call(1)];
@@ -469,13 +471,13 @@ mod tests {
                 #[allow(non_snake_case)]
                 #[test]
                 fn test_name() {
-                    let registry = OperatorRegistry::new([].as_slice()).unwrap();
+                    let registry = OperatorRegistry::new([].as_slice() as &[&str]).unwrap();
                     let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningScalar {
                         index: 0,
                         params: 2,
                         return_type: Datatype::$datatype,
                     }]);
-                    let ops = registry.from_instruction(&Call(0), &context);
+                    let ops = registry.mutants_for_instruction(&Call(0), &context);
                     assert_eq!(ops.len(), 0);
                 }
             });

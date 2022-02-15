@@ -117,7 +117,7 @@ pub enum CLICommand {
 #[derive(ArgEnum, Clone, Debug)]
 pub enum Output {
     Console,
-    HTML,
+    Html,
 }
 
 impl CLIArguments {
@@ -125,6 +125,7 @@ impl CLIArguments {
         Self::parse()
     }
 
+    #[allow(dead_code)]
     pub fn parse_args_from<I, T>(itr: I) -> Self
     where
         I: IntoIterator<Item = T>,
