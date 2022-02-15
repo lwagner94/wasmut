@@ -2,9 +2,22 @@
 name = "wasmut"
 version = "0.1.0"
 edition = "2021"
-description = "wasmut: Mutation testing tool for WebAssembly"
+description = "Mutation testing tool for WebAssembly/WASI modules"
+authors = ["Lukas Wagner <lwagner94@posteo.at>"]
 license = "MIT"
 
+exclude = ["/testdata", "/wasmut-report"]
+keywords = ["wasm", "mutation", "testing", "WebAssembly"]
+categories = ["command-line-utilities", "development-tools::testing", "wasm"]
+readme = "README.md"
+
+documentation = "https://github.com/lwagner94/wasmut"
+repository = "https://github.com/lwagner94/wasmut"
+homepage = "https://github.com/lwagner94/wasmut"
+
+[badges]
+coveralls = { repository = "lwagner94/wasmut", branch = "main", service = "github" }
+maintenance = { status = "actively-developed" }
 
 [dependencies]
 rayon = "1.5.1"
