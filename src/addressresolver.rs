@@ -95,14 +95,6 @@ fn function_name(name: &str, language: Option<gimli::DwLang>) -> String {
     addr2line::demangle_auto(Cow::from(name), language).into()
 }
 
-// fn code_location(location: Option<Location>) -> (Option<&str>, Option<u32>, Option<u32>) {
-//     if let Some(ref loc) = location {
-//         (loc.file, loc.line, loc.column)
-//     } else {
-//         (None, None, None)
-//     }
-// }
-
 #[cfg(test)]
 mod tests {
     use super::*;

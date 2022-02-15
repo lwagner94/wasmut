@@ -68,6 +68,10 @@ impl WasmModule {
         let module: Module = parity_wasm::elements::deserialize_buffer(&bytes)
             .context("Bytecode deserialization failed")?;
 
+        if !module.has_names_section() {
+            log::warn!("Module has no name section, make sure to enable the debug flag!");
+        }
+
         Ok(WasmModule { module, bytes })
     }
 
