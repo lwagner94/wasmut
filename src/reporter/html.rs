@@ -18,6 +18,7 @@ use super::{
 };
 
 impl From<MutationOutcome> for String {
+    /// Convert `MutationOutcome` to `String`
     fn from(m: MutationOutcome) -> Self {
         match m {
             MutationOutcome::Alive => "ALIVE".into(),
@@ -37,6 +38,7 @@ enum BulmaClass {
 }
 
 impl BulmaClass {
+    /// Deterine `BulmaClass` from mutation score
     fn from_mutation_score(score: f32) -> Self {
         match score {
             x if (0.0..50.0).contains(&x) => BulmaClass::Danger,
@@ -48,6 +50,7 @@ impl BulmaClass {
 }
 
 impl From<BulmaClass> for String {
+    /// Convert `BulmaClass` to concrete bulma class used in the `class` parameter
     fn from(b: BulmaClass) -> Self {
         match b {
             BulmaClass::Success => "is-success",
@@ -60,6 +63,7 @@ impl From<BulmaClass> for String {
 }
 
 impl From<AccumulatedOutcomes> for BulmaClass {
+    /// Convert from `AccumulatedOutcomes` to `BulmaClass`
     fn from(a: AccumulatedOutcomes) -> Self {
         let total = a.alive + a.error + a.killed + a.timeout;
 
@@ -80,6 +84,34 @@ pub struct HTMLReporter<'a> {
     output_directory: &'a Path,
     syntax_set: SyntaxSet,
     path_rewriter: Option<PathRewriter>,
+}
+
+impl<'a> Reporter for HTMLReporter<'a> {
+    fn report(&self, executed_mutants: &[super::ExecutedMutant]) -> Result<()> {
+        // Prepare output directory
+        self.create_output_directory()?;
+        self.create_static_files()?;
+
+        // Initialize template engine
+        let template_engine = create_template_engine();
+
+        // Create general report info (program version, date, etc.)
+        let report_info = ReportInfo::new();
+
+        // Render individual source files
+        let source_files =
+            self.render_source_files(executed_mutants, &report_info, &template_engine)?;
+
+        // Render index.html
+        self.render_index(
+            executed_mutants,
+            &source_files,
+            &report_info,
+            &template_engine,
+        )?;
+
+        Ok(())
+    }
 }
 
 impl<'a> HTMLReporter<'a> {
@@ -164,6 +196,7 @@ impl<'a> HTMLReporter<'a> {
         Ok(())
     }
 
+    /// Render individual source files
     fn render_source_files(
         &self,
         executed_mutants: &[ExecutedMutant],
@@ -210,6 +243,7 @@ impl<'a> HTMLReporter<'a> {
         Ok(source_files)
     }
 
+    /// Render index file.
     fn render_index(
         &self,
         executed_mutants: &[ExecutedMutant],
@@ -232,34 +266,8 @@ impl<'a> HTMLReporter<'a> {
     }
 }
 
-impl<'a> Reporter for HTMLReporter<'a> {
-    fn report(&self, executed_mutants: &[super::ExecutedMutant]) -> Result<()> {
-        // Prepare output directory
-        self.create_output_directory()?;
-        self.create_static_files()?;
-
-        // Initialize template engine
-        let template_engine = create_template_engine();
-
-        // Create general report info (program version, date, etc.)
-        let report_info = ReportInfo::new();
-
-        // Render individual source files
-        let source_files =
-            self.render_source_files(executed_mutants, &report_info, &template_engine)?;
-
-        // Render index.html
-        self.render_index(
-            executed_mutants,
-            &source_files,
-            &report_info,
-            &template_engine,
-        )?;
-
-        Ok(())
-    }
-}
-
+/// Generate filename by taking the filename of a
+/// given path and appending the hash of the full path.
 fn generate_html_filename(file: &str) -> Result<String> {
     let file_name = Path::new(file)
         .file_name()
@@ -268,7 +276,7 @@ fn generate_html_filename(file: &str) -> Result<String> {
         .to_str()
         .context("Could not convert OsStr to &str")?;
 
-    let hash = md5::compute(file_name_as_str);
+    let hash = md5::compute(file);
     Ok(format!("{file_name_as_str}-{hash:?}.html"))
 }
 
@@ -408,7 +416,7 @@ mod tests {
     fn generate_filename_for_simple_add() -> Result<()> {
         let s =
             generate_html_filename("/home/lukas/Repos/wasmut/testdata/simple_add/simple_add.c")?;
-        assert_eq!(&s, "simple_add.c-fa92c051d002ff3e94998e6acfc1f707.html");
+        assert_eq!(&s, "simple_add.c-ce4786400a5a428e3c19c99a8478f672.html");
         Ok(())
     }
 

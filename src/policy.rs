@@ -4,29 +4,47 @@ use anyhow::{Context, Result};
 
 use regex::RegexSet;
 
+/// Policy used when executing a WebAssembly module
 pub enum ExecutionPolicy {
-    // Run the function until the execution limit is reached
+    /// Run the function until the execution limit is reached
     RunUntilLimit {
-        // The maximum number of instructions to execute
+        /// The maximum number of instructions to execute
         limit: u64,
     },
-    // Run the function until the function returns
+    /// Run the function until the function returns
     RunUntilReturn,
 }
 
+/// Builder used to construct a `MutationPolicy`
 pub struct MutationPolicyBuilder {
+    /// List of regular expressions used to determine which functions are allowed
+    /// to be mutated
     allowed_functions: Vec<String>,
+
+    /// List of regular expressions used to determine which files are allowed
+    /// to be mutated
     allowed_files: Vec<String>,
+
+    /// If set, there are no restrictions
     anything_allowed: bool,
 }
 
+/// Policy used when discovering mutant candidates
 pub struct MutationPolicy {
+    /// List of regular expressions used to determine which functions are allowed
+    /// to be mutated
     allowed_functions: RegexSet,
+
+    /// List of regular expressions used to determine which files are allowed
+    /// to be mutated
     allowed_files: RegexSet,
+
+    /// If set, there are no restrictions
     anything_allowed: bool,
 }
 
 impl MutationPolicyBuilder {
+    /// Add a function regex
     pub fn allow_function<T: AsRef<str>>(mut self, name: T) -> Self {
         self.allowed_functions.push(String::from(name.as_ref()));
         Self {
@@ -35,6 +53,7 @@ impl MutationPolicyBuilder {
         }
     }
 
+    /// Add a file regex
     pub fn allow_file<T: AsRef<str>>(mut self, name: T) -> Self {
         self.allowed_files.push(String::from(name.as_ref()));
         Self {
@@ -43,6 +62,7 @@ impl MutationPolicyBuilder {
         }
     }
 
+    /// Build the final `MutationPolicy`
     pub fn build(self) -> Result<MutationPolicy> {
         let allowed_functions = RegexSet::new(&self.allowed_functions)
             .context("Could not build allowed_functions regex set")?;
@@ -58,6 +78,7 @@ impl MutationPolicyBuilder {
 }
 
 impl Default for MutationPolicyBuilder {
+    /// Default mutation policy, allow everything.
     fn default() -> Self {
         Self {
             allowed_functions: Default::default(),
@@ -68,6 +89,7 @@ impl Default for MutationPolicyBuilder {
 }
 
 impl MutationPolicy {
+    /// Construct a mutation policy from `Config`
     pub fn from_config(config: &Config) -> Result<Self> {
         let mut builder = MutationPolicyBuilder::default();
 
@@ -86,14 +108,17 @@ impl MutationPolicy {
         builder.build()
     }
 
+    /// Check if a function is allowed to be mutated
     pub fn check_function<T: AsRef<str>>(&self, name: T) -> bool {
         self.anything_allowed || self.allowed_functions.is_match(name.as_ref())
     }
 
+    /// Check if a file is allowed to be mutated
     pub fn check_file<T: AsRef<str>>(&self, name: T) -> bool {
         self.anything_allowed || self.allowed_files.is_match(name.as_ref())
     }
 
+    /// Check if a function/file is allowed
     pub fn check<T: AsRef<str>>(&self, file: Option<T>, func: Option<T>) -> bool {
         let file_allowed = file.map_or(false, |file| self.check_file(file));
         let func_allowed = func.map_or(false, |func| self.check_function(func));
@@ -103,6 +128,7 @@ impl MutationPolicy {
 }
 
 impl Default for MutationPolicy {
+    /// Create default `MutationPolicy`, where everything is allowed
     fn default() -> Self {
         Self {
             allowed_functions: RegexSet::new(&[] as &[&str]).unwrap(),

@@ -7,9 +7,12 @@ use anyhow::{Context, Result};
 
 use rayon::prelude::*;
 
+/// Callback type used by wasmmodule::instruction_walker
 pub type CallbackType<'a, R> =
     &'a (dyn Fn(&Instruction, &InstructionWalkerLocation) -> Vec<R> + Send + Sync);
 
+/// Code location passed to `CallbackType`, it represents where
+/// we are when traversing the module.
 pub struct InstructionWalkerLocation<'a> {
     pub file: Option<&'a str>,
     pub function: Option<&'a str>,
@@ -18,6 +21,7 @@ pub struct InstructionWalkerLocation<'a> {
     pub instruction_offset: u64,
 }
 
+/// WebAssembly native datatypes
 #[derive(Debug, PartialEq)]
 pub enum Datatype {
     I32,
@@ -50,6 +54,7 @@ pub enum CallRemovalCandidate {
     },
 }
 
+/// WasmModule represents a (parsed) WebAssembly module
 #[derive(Clone)]
 pub struct WasmModule {
     module: parity_wasm::elements::Module,
@@ -57,11 +62,13 @@ pub struct WasmModule {
 }
 
 impl WasmModule {
+    /// Construct a new `WasmModule` from a file path
     pub fn from_file(path: &str) -> Result<WasmModule> {
         let bytes = std::fs::read(path)?;
         Self::from_bytes(bytes)
     }
 
+    /// Construct a new `WasmModule` from a bytearray
     pub fn from_bytes(bytes: Vec<u8>) -> Result<WasmModule> {
         let module: Module = parity_wasm::elements::deserialize_buffer(&bytes)
             .context("Bytecode deserialization failed")?;
@@ -73,6 +80,7 @@ impl WasmModule {
         Ok(WasmModule { module, bytes })
     }
 
+    /// Traverse module, and call callback function for every instruction
     pub fn instruction_walker<R: Send>(&self, callback: CallbackType<R>) -> Result<Vec<R>> {
         let code_section = self
             .module
@@ -121,6 +129,7 @@ impl WasmModule {
             .collect())
     }
 
+    /// Apply a mutation
     pub fn mutate(&mut self, mutation: &Mutation) {
         let instructions = self
             .module
@@ -137,6 +146,8 @@ impl WasmModule {
             .apply(instructions, mutation.statement_number);
     }
 
+    /// Traverse all instructions and compute all function names and file names
+    /// using `AddressResolver`
     fn files_and_functions(&self) -> (HashSet<String>, HashSet<String>) {
         let resolver = AddressResolver::new(&self.bytes);
 
@@ -168,14 +179,19 @@ impl WasmModule {
         (files, functions)
     }
 
+    /// Return a set of all function names in the module
     pub fn functions(&self) -> HashSet<String> {
         self.files_and_functions().1
     }
 
+    /// Return a set of all file names in the module
     pub fn source_files(&self) -> HashSet<String> {
         self.files_and_functions().0
     }
 
+    /// Examine import section and function section of the module
+    /// to check which call instruction may be removed using
+    /// the `call_remove_*` operators.
     pub fn call_removal_candidates(&self) -> Result<Vec<CallRemovalCandidate>> {
         let type_section = self
             .module
@@ -235,16 +251,23 @@ impl WasmModule {
         Ok(candidates)
     }
 
+    /// Serialize module
+    ///
+    /// Debug information that may have been present in the original module
+    /// is discarded.
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
         parity_wasm::serialize(self.module.clone()).context("Failed to serialize module")
     }
 
+    /// Create a clone and apply a mutation
     pub fn mutated_clone(&self, mutation: &Mutation) -> Self {
         let mut mutant = self.clone();
         mutant.mutate(mutation);
         mutant
     }
 
+    // TODO: Maybe return an Option here when the module has been mutated?
+    /// Return the original bytecode of the module
     pub fn original_bytes(&self) -> &[u8] {
         &self.bytes
     }
