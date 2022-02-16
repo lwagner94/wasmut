@@ -19,7 +19,7 @@ jobs:
             strip: true
           - os: windows-latest
             artifact_name: wasmut.exe
-            asset_name: wasmut_x86_64-pc-windows-msvc
+            asset_name: wasmut_x86_64-pc-windows-msvc.exe
             strip: false
 
     steps:
