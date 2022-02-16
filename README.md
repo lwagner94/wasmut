@@ -16,6 +16,8 @@
   - [License](#license)
 
 ## Installation
+Currently, `wasmut` officially supports Linux and Windows. macOS should also 
+mostly work, however I cannot guarantee anything, since I do not have access to a Mac.
 ### Pre-built binaries
 For Linux and Windows, pre-built binaries for the `amd64` architecture can be found on
 the [releases pages](https://github.com/lwagner94/wasmut/releases) of this repository.
