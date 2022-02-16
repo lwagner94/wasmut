@@ -26,21 +26,16 @@ the [releases pages](https://github.com/lwagner94/wasmut/releases) of this repos
 `wasmut` is implemented in Rust, thus you need the Rust toolchain to compile the
 project. The *minimum supported Rust version (MSRV)* is 1.58.
 
-To install `wasmut` directly from [crates.io](https://crates.io/crates/wasmut), simply run
-```sh
-> cargo install wasmut
-```
-which will install `wasmut` to `$HOME/.cargo/bin` by default. Make sure that 
-this path is included in our `$PATH` variable.
-
-Alternatively, you can also install the latest development version of `wasmut` by cloning 
-the git repository.
+To install `wasmut` the latest development version of `wasmut`, clone
+the git repository and use the `cargo install` command.
 ```sh
 > # The --recursive flag is only needed if you want to run the unit tests.
 > git clone --recursive https://github.com/lwagner94/wasmut
 > cd wasmut
 > cargo install --path .
 ```
+This will install `wasmut` to `$HOME/.cargo/bin` by default. Make sure that 
+this path is included in our `$PATH` variable.
 
 ## Development
 If you want to hack on `wasmut`, simply check out the repository. Be sure to include

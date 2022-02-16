@@ -1,11 +1,9 @@
 use std::ffi::OsString;
 
-use clap::{AppSettings, ArgEnum, Parser, Subcommand};
+use clap::{ArgEnum, Parser, Subcommand};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
-#[clap(global_setting(AppSettings::PropagateVersion))]
-#[clap(global_setting(AppSettings::UseLongFormatForHelpSubcommand))]
 pub struct CLIArguments {
     #[clap(subcommand)]
     pub command: CLICommand,

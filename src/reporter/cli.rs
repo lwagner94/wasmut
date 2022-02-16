@@ -55,7 +55,7 @@ impl CLIReporter {
         output::output_string(format!("{0:15} {1}\n", error_str, acc.error));
         output::output_string(format!("{0:15} {1}\n", killed_str, acc.killed));
         output::output_string(format!(
-            "{0:15} {1}%\n",
+            "{0:15} {1:.1}%\n",
             "Mutation score", acc.mutation_score
         ));
     }
@@ -268,6 +268,6 @@ mod tests {
 
         let output = report_to_string(executed_mutants);
 
-        assert!(output.contains("75%"));
+        assert!(output.contains("75.0%"));
     }
 }
