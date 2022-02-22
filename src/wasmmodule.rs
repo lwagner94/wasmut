@@ -146,47 +146,32 @@ impl WasmModule {
             .apply(instructions, mutation.statement_number);
     }
 
-    /// Traverse all instructions and compute all function names and file names
-    /// using `AddressResolver`
-    fn files_and_functions(&self) -> (HashSet<String>, HashSet<String>) {
-        let resolver = AddressResolver::new(&self.bytes);
-
-        let mut functions = HashSet::new();
-        let mut files = HashSet::new();
-
-        if let Some(code_section) = self.module.code_section() {
-            let code_section_offset = code_section.offset();
-
-            code_section.bodies().iter().for_each(|func_body| {
-                let offsets = func_body.code().offsets();
-
-                for offset in offsets.iter() {
-                    let code_offset = *offset - code_section_offset;
-
-                    if let Some(location) = resolver.lookup_address(code_offset) {
-                        if let Some(ref file) = location.function {
-                            functions.insert(file.clone());
-                        }
-
-                        if let Some(file) = location.file {
-                            files.insert(file);
-                        }
-                    }
-                }
-            });
-        }
-
-        (files, functions)
-    }
-
     /// Return a set of all function names in the module
     pub fn functions(&self) -> HashSet<String> {
-        self.files_and_functions().1
+        let callback: CallbackType<String> = &|_, location| {
+            if let Some(function) = location.function {
+                vec![function.into()]
+            } else {
+                vec![]
+            }
+        };
+
+        let results = self.instruction_walker(callback).unwrap_or_default();
+        results.into_iter().collect()
     }
 
     /// Return a set of all file names in the module
     pub fn source_files(&self) -> HashSet<String> {
-        self.files_and_functions().0
+        let callback: CallbackType<String> = &|_, location| {
+            if let Some(file) = location.file {
+                vec![file.into()]
+            } else {
+                vec![]
+            }
+        };
+
+        let results = self.instruction_walker(callback).unwrap_or_default();
+        results.into_iter().collect()
     }
 
     /// Examine import section and function section of the module

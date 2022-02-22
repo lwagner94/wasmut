@@ -20,7 +20,8 @@
 		"rust-analyzer.diagnostics.disabled": [
 			"macro-error",
 			"unresolved-macro-call"
-		  ]
+		],
+		"editor.formatOnSave": true
 	},
 	"launch": {
 		"version": "0.2.0",
