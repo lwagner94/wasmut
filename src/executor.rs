@@ -17,6 +17,10 @@ pub struct Executor<'a> {
 
     /// List of directory mappings
     mapped_dirs: &'a [(String, String)],
+
+    /// If set to true, mutants that have no chance of being ever executed
+    /// will be skipped.
+    coverage: bool,
 }
 
 impl<'a> Executor<'a> {
@@ -25,6 +29,7 @@ impl<'a> Executor<'a> {
         Executor {
             timeout_multiplier: config.engine().timeout_multiplier(),
             mapped_dirs: config.engine().map_dirs(),
+            coverage: config.engine().coverage_based_execution(),
         }
     }
 
@@ -32,7 +37,7 @@ impl<'a> Executor<'a> {
     ///
     /// The stdout/stderr output of the module will not be supressed
     pub fn execute(&self, module: &WasmModule) -> Result<()> {
-        let mut runtime = runtime::create_runtime(module, false, self.mapped_dirs)?;
+        let mut runtime = runtime::create_runtime(module, false, false, self.mapped_dirs)?;
 
         // TODO: Code duplication?
         match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
@@ -50,6 +55,7 @@ impl<'a> Executor<'a> {
                 panic!("Execution limit exceeded even though we set no limit!")
             }
             ExecutionResult::Error => bail!("Module failed to execute"),
+            ExecutionResult::Skipped => panic!("Runtime returned ExecutionResult::Skipped"),
         };
 
         Ok(())
@@ -63,24 +69,37 @@ impl<'a> Executor<'a> {
         module: &WasmModule,
         mutations: &[Mutation],
     ) -> Result<Vec<ExecutionResult>> {
-        let mut runtime = runtime::create_runtime(module, true, self.mapped_dirs)?;
-
-        let execution_cost = match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
-            ExecutionResult::ProcessExit {
-                exit_code,
-                execution_cost,
-            } => {
-                if exit_code == 0 {
-                    execution_cost
-                } else {
-                    bail!("Module without any mutations returned exit code {exit_code}");
-                }
-            }
-            ExecutionResult::Timeout => {
-                panic!("Execution limit exceeded even though we set no limit!")
-            }
-            ExecutionResult::Error => bail!("Module failed to execute"),
+        let mut runtime = if self.coverage {
+            let mut module = module.clone();
+            module.insert_trace_points();
+            runtime::create_runtime(&module, true, true, self.mapped_dirs)?
+        } else {
+            runtime::create_runtime(module, true, false, self.mapped_dirs)?
         };
+
+        let mut execution_cost =
+            match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
+                ExecutionResult::ProcessExit {
+                    exit_code,
+                    execution_cost,
+                } => {
+                    if exit_code == 0 {
+                        execution_cost
+                    } else {
+                        bail!("Module without any mutations returned exit code {exit_code}");
+                    }
+                }
+                ExecutionResult::Timeout => {
+                    panic!("Execution limit exceeded even though we set no limit!")
+                }
+                ExecutionResult::Error => bail!("Module failed to execute"),
+                ExecutionResult::Skipped => panic!("Runtime returned ExecutionResult::Skipped"),
+            };
+
+        if self.coverage {
+            // For every instruction, a I32Const and a Call instruction will be inserted
+            execution_cost /= 3;
+        }
 
         log::info!("Original module executed in {execution_cost} cycles");
         let limit = (execution_cost as f64 * self.timeout_multiplier).ceil() as u64;
@@ -88,47 +107,44 @@ impl<'a> Executor<'a> {
 
         let pb = ProgressBar::new(mutations.len() as u64);
 
-        let outcomes = mutations
+        let trace_points = runtime.trace_points();
+
+        let outcomes: Vec<ExecutionResult> = mutations
             .par_iter()
             .progress_with(pb.clone())
             .map(|mutation| {
+                if let Some(points) = trace_points.as_ref() {
+                    if !points.contains(&mutation.offset) {
+                        return ExecutionResult::Skipped;
+                    }
+                }
+
                 let module = module.mutated_clone(mutation);
 
                 let policy = ExecutionPolicy::RunUntilLimit { limit };
 
-                let mut runtime = runtime::create_runtime(&module, true, self.mapped_dirs).unwrap();
+                let mut runtime =
+                    runtime::create_runtime(&module, true, false, self.mapped_dirs).unwrap();
                 runtime.call_test_function(policy).unwrap()
             })
             .collect();
 
         pb.finish_and_clear();
 
+        if self.coverage {
+            let skipped = outcomes.iter().fold(0, |acc, current| match current {
+                ExecutionResult::Skipped => acc + 1,
+                _ => acc,
+            });
+
+            log::info!(
+                "Skipped {}/{} mutant because of missing code coverage",
+                skipped,
+                outcomes.len()
+            );
+        }
+
         Ok(outcomes)
-    }
-
-    pub fn execute_coverage(&self, module: &WasmModule) -> Result<()> {
-        let mut runtime = runtime::create_runtime(&module.clone(), true, &[])?;
-
-        let execution_cost = match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
-            ExecutionResult::ProcessExit {
-                exit_code,
-                execution_cost,
-            } => {
-                if exit_code == 0 {
-                    execution_cost
-                } else {
-                    bail!("Module without any mutations returned exit code {exit_code}");
-                }
-            }
-            ExecutionResult::Timeout => {
-                panic!("Execution limit exceeded even though we set no limit!")
-            }
-            ExecutionResult::Error => bail!("Module failed to execute"),
-        };
-
-        log::info!("Coverage executed in {execution_cost} cycles");
-
-        Ok(())
     }
 }
 
@@ -140,7 +156,12 @@ mod tests {
     fn mutate_module(test_case: &str, mutations: &[Mutation]) -> Result<Vec<ExecutionResult>> {
         let path = format!("testdata/{test_case}/test.wasm");
         let module = WasmModule::from_file(&path)?;
-        let config = Config::default();
+        let config = Config::parse(
+            r#"
+            [engine]
+            coverage_based_execution = false
+        "#,
+        )?;
         let executor = Executor::new(&config);
         executor.execute_mutants(&module, mutations)
     }
@@ -171,7 +192,7 @@ mod tests {
         let mutations = vec![Mutation {
             function_number: 1,
             statement_number: 2,
-            offset: 34,
+            offset: 37,
             operator: Box::new(crate::operator::ops::BinaryOperatorAddToSub(
                 parity_wasm::elements::Instruction::I32Add,
                 parity_wasm::elements::Instruction::I32Sub,
@@ -183,6 +204,33 @@ mod tests {
             result[0],
             ExecutionResult::ProcessExit { exit_code: 1, .. }
         ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn skip_because_not_covered() -> Result<()> {
+        let mutations = vec![Mutation {
+            function_number: 3,
+            statement_number: 0,
+            offset: 46,
+            operator: Box::new(crate::operator::ops::ConstReplaceNonZero(
+                parity_wasm::elements::Instruction::I32Const(-1),
+                parity_wasm::elements::Instruction::I32Const(0),
+            )),
+        }];
+
+        let module = WasmModule::from_file("testdata/no_coverage/test.wasm")?;
+        let config = Config::parse(
+            r#"
+            [engine]
+            coverage_based_execution = true
+        "#,
+        )?;
+        let executor = Executor::new(&config);
+        let result = executor.execute_mutants(&module, &mutations)?;
+
+        assert!(matches!(result[0], ExecutionResult::Skipped));
 
         Ok(())
     }

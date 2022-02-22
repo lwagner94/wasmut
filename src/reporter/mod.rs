@@ -49,6 +49,7 @@ impl From<ExecutionResult> for MutationOutcome {
             }
             ExecutionResult::Timeout => MutationOutcome::Timeout,
             ExecutionResult::Error => MutationOutcome::Error,
+            ExecutionResult::Skipped => MutationOutcome::Alive,
         }
     }
 }

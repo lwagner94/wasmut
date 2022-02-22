@@ -354,22 +354,22 @@ impl<'a> WasmModule<'a> {
 
     fn insert_calls(&mut self, function_index: u32) {
         if let Some(code_section) = self.module.code_section_mut() {
-            for func_body in code_section.bodies_mut() {
-                let offset = *func_body.code_mut().offsets().get(0).unwrap();
-                func_body
-                    .code_mut()
-                    .elements_mut()
-                    .insert(0, Instruction::Call(function_index));
-                func_body
-                    .code_mut()
-                    .elements_mut()
-                    .insert(0, Instruction::I64Const(offset as i64));
+            let code_section_offset = code_section.offset();
 
-                // for instruction in  {
-                //     if let Instruction::Call(index) = instruction {
-                //         *index += 1;
-                //     }
-                // }
+            for func_body in code_section.bodies_mut() {
+                let code = func_body.code_mut();
+
+                let mut instructions = Vec::new();
+
+                for (instr, instr_offset) in code.elements().iter().zip(code.offsets()) {
+                    let offset = instr_offset - code_section_offset;
+
+                    instructions.push(Instruction::I64Const(offset as i64));
+                    instructions.push(Instruction::Call(function_index));
+                    instructions.push(instr.clone());
+                }
+
+                *code.elements_mut() = instructions;
             }
         }
     }

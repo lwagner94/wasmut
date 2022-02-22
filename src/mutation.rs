@@ -6,6 +6,7 @@ use crate::{config::Config, policy::MutationPolicy, wasmmodule::WasmModule};
 use anyhow::Result;
 
 /// Definition of a position where and how a module is mutated.
+#[derive(Debug)]
 pub struct Mutation {
     /// The index in the module's function table
     pub function_number: u64,

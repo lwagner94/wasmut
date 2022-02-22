@@ -321,6 +321,17 @@ for any hints on what compiler options to use.
     map_dirs = [["testdata/count_words/files", "files"],]
     ```
 
+  - `coverage_based_execution`: 
+    Before executing mutants, wasmut will run the wasm module without 
+    any mutations and generate coverage information. 
+    If `coverage_based_execution` is enabled, the execution of mutants
+    where the mutated instruction was never executed will be skipped.
+    Defaults to `true`.
+
+    ```toml
+    coverage_based_execution = false
+    ```
+
 
 ### `[filter]` section
 
@@ -365,6 +376,7 @@ for any hints on what compiler options to use.
 [engine]
 timeout_multiplier = 4.0
 map_dirs = [["testdata/count_words/files", "files"],]
+coverage_based_execution = true
 
 [filter]
 allowed_functions = ["^count_words"]

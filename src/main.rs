@@ -137,16 +137,6 @@ fn run(wasmfile: &str, config: &Config) -> Result<()> {
     Ok(())
 }
 
-/// Run a WebAssembly file without any mutations.
-fn coverage(wasmfile: &str, config: &Config) -> Result<()> {
-    let mut module = WasmModule::from_file(wasmfile)?;
-    module.insert_trace_points();
-
-    let executor = Executor::new(config);
-    executor.execute_coverage(&module)?;
-    Ok(())
-}
-
 /// Load wasmut.toml configuration file.
 fn load_config(
     config_path: Option<&str>,
@@ -256,14 +246,6 @@ fn run_main(cli: CLIArguments) -> Result<()> {
         } => {
             let config = load_config(config.as_deref(), wasmfile.as_deref(), config_samedir)?;
             list_operators(&config)?;
-        }
-        CLICommand::Coverage {
-            wasmfile,
-            config,
-            config_samedir,
-        } => {
-            let config = load_config(config.as_deref(), Some(&wasmfile), config_samedir)?;
-            coverage(&wasmfile, &config)?
         }
     }
 

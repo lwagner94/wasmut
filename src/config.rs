@@ -38,6 +38,11 @@ pub struct EngineConfig {
 
     /// A list of all directories that are to be mapped into the runtime
     map_dirs: Option<Vec<(String, String)>>,
+
+    /// If true, skip execution of mutants automatically if the mutated
+    /// line was never executed in the baseline run.
+    /// Defaults to true
+    coverage_based_execution: Option<bool>,
 }
 
 impl EngineConfig {
@@ -53,6 +58,11 @@ impl EngineConfig {
         } else {
             &[]
         }
+    }
+
+    /// Skip mutant execution based on coverage
+    pub fn coverage_based_execution(&self) -> bool {
+        self.coverage_based_execution.unwrap_or(true)
     }
 }
 
@@ -203,9 +213,11 @@ mod tests {
             [engine]
             timeout_multiplier = 10
             map_dirs = [["a/foo", "b/bar"], ["abcd", "abcd"]]
+            coverage_based_execution = false
             "#,
         )?;
         assert_eq!(config.engine().timeout_multiplier(), 10.0);
+        assert!(!config.engine().coverage_based_execution());
         assert_eq!(
             config.engine().map_dirs(),
             [
@@ -268,6 +280,7 @@ mod tests {
             "#,
         )?;
         assert_eq!(config.engine().timeout_multiplier(), 2.0);
+        assert!(config.engine().coverage_based_execution());
         assert_eq!(config.engine().map_dirs(), []);
         assert_eq!(config.filter().allowed_files(), None);
         assert_eq!(config.filter().allowed_functions(), None);
