@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{borrow::Cow, collections::HashSet};
 
 use crate::{addressresolver::AddressResolver, mutation::Mutation};
 use parity_wasm::elements::{External, Instruction, Module, Type, ValueType};
@@ -56,28 +56,27 @@ pub enum CallRemovalCandidate {
 
 /// WasmModule represents a (parsed) WebAssembly module
 #[derive(Clone)]
-pub struct WasmModule {
+pub struct WasmModule<'a> {
     module: parity_wasm::elements::Module,
-    bytes: Vec<u8>,
+    path: Cow<'a, str>,
 }
 
-impl WasmModule {
+impl<'a> WasmModule<'a> {
     /// Construct a new `WasmModule` from a file path
     pub fn from_file(path: &str) -> Result<WasmModule> {
-        let bytes = std::fs::read(path)?;
-        Self::from_bytes(bytes)
-    }
+        // let p: Cow<'_, str> = Cow::Owned(path.to_string());
 
-    /// Construct a new `WasmModule` from a bytearray
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<WasmModule> {
-        let module: Module = parity_wasm::elements::deserialize_buffer(&bytes)
+        let module: Module = parity_wasm::elements::deserialize_file(path)
             .context("Bytecode deserialization failed")?;
 
         if !module.has_names_section() {
             log::warn!("Module has no name section, make sure to enable the debug flag!");
         }
 
-        Ok(WasmModule { module, bytes })
+        Ok(WasmModule {
+            module,
+            path: path.into(),
+        })
     }
 
     /// Traverse module, and call callback function for every instruction
@@ -87,12 +86,15 @@ impl WasmModule {
             .code_section()
             .context("Module has no code section")?;
 
+        let bytes = std::fs::read(&self.path.as_ref())
+            .with_context(|| format!("Could not read bytecode from {}", self.path))?;
+
         Ok(code_section
             .bodies()
             .par_iter()
             .enumerate()
             .map_init(
-                || AddressResolver::new(&self.bytes),
+                || AddressResolver::new(&bytes),
                 |resolver, (func_index, func_body)| {
                     let instructions = func_body.code().elements();
                     let offsets = func_body.code().offsets();
@@ -130,7 +132,7 @@ impl WasmModule {
     }
 
     /// Apply a mutation
-    pub fn mutate(&mut self, mutation: &Mutation) {
+    fn mutate(&mut self, mutation: &Mutation) {
         let instructions = self
             .module
             .code_section_mut()
@@ -251,10 +253,8 @@ impl WasmModule {
         mutant
     }
 
-    // TODO: Maybe return an Option here when the module has been mutated?
-    /// Return the original bytecode of the module
-    pub fn original_bytes(&self) -> &[u8] {
-        &self.bytes
+    pub fn path(&self) -> &str {
+        &self.path
     }
 }
 
@@ -262,18 +262,10 @@ impl WasmModule {
 mod tests {
     use super::*;
     use anyhow::Result;
-    use std::fs::read;
 
     #[test]
     fn test_load_from_file() {
         assert!(WasmModule::from_file("testdata/simple_add/test.wasm").is_ok());
-    }
-
-    #[test]
-    fn test_load_from_bytes() -> Result<()> {
-        let bytecode = read("testdata/simple_add/test.wasm")?;
-        WasmModule::from_bytes(bytecode)?;
-        Ok(())
     }
 
     #[test]

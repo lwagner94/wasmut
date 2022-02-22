@@ -104,8 +104,7 @@ mod tests {
         let engine = MutationEngine::new(&config)?;
 
         let positions = engine.discover_mutation_positions(&module).unwrap();
-        let mut mutant = module.clone();
-        mutant.mutate(&positions[0]);
+        let mutant = module.mutated_clone(&positions[0]);
 
         let mutated_bytecode: Vec<u8> = mutant.to_bytes().unwrap();
         let original_bytecode: Vec<u8> = module.to_bytes().unwrap();

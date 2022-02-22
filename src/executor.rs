@@ -113,7 +113,8 @@ mod tests {
     use super::*;
 
     fn mutate_module(test_case: &str, mutations: &[Mutation]) -> Result<Vec<ExecutionResult>> {
-        let module = WasmModule::from_file(&format!("testdata/{test_case}/test.wasm"))?;
+        let path = format!("testdata/{test_case}/test.wasm");
+        let module = WasmModule::from_file(&path)?;
         let config = Config::default();
         let executor = Executor::new(&config);
         executor.execute_mutants(&module, mutations)

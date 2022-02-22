@@ -64,14 +64,16 @@ pub fn prepare_results(
     module: &WasmModule,
     mutations: Vec<Mutation>,
     results: Vec<ExecutionResult>,
-) -> Vec<ExecutedMutant> {
-    let resolver = AddressResolver::new(module.original_bytes());
+) -> Result<Vec<ExecutedMutant>> {
+    let bytes = std::fs::read(module.path()).context("Could not read bytecode from file")?;
+
+    let resolver = AddressResolver::new(&bytes);
 
     if mutations.len() != results.len() {
         panic!("Mutation/Execution result length mismatch, this is a bug!");
     }
 
-    mutations
+    Ok(mutations
         .into_iter()
         .zip(results)
         .map(|(mutation, result)| ExecutedMutant {
@@ -79,7 +81,7 @@ pub fn prepare_results(
             outcome: result.into(),
             operator: mutation.operator,
         })
-        .collect()
+        .collect())
 }
 
 pub trait Reporter {
@@ -256,7 +258,7 @@ mod tests {
     #[test]
     fn prepare_results_empty_lists() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        assert_eq!(prepare_results(&module, vec![], vec![]).len(), 0);
+        assert_eq!(prepare_results(&module, vec![], vec![]).unwrap().len(), 0);
         Ok(())
     }
 
@@ -325,7 +327,7 @@ mod tests {
             ExecutionResult::Error,
         ];
 
-        let results = prepare_results(&module, mutation, execution_results);
+        let results = prepare_results(&module, mutation, execution_results).unwrap();
 
         dbg!(&results);
         assert_eq!(results.len(), 4);

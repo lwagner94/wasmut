@@ -103,7 +103,7 @@ fn mutate(
     let executor = Executor::new(config);
     let results = executor.execute_mutants(&module, &mutations)?;
 
-    let executed_mutants = reporter::prepare_results(&module, mutations, results);
+    let executed_mutants = reporter::prepare_results(&module, mutations, results)?;
 
     match report_type {
         Output::Console => {
