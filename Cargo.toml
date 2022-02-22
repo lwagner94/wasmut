@@ -29,8 +29,7 @@ wasmer-wasi = {version = "2.1.1"}
 wasmer-middlewares = {version = "2.1.1"}
 
 # TODO: Maybe upstream my changes?
-parity-wasm = { git = "https://github.com/lwagner94/parity-wasm", branch="instruction-offsets" }
-
+parity-wasm = { git = "https://github.com/lwagner94/parity-wasm", branch="instruction-offsets-rework", features=["std", "offsets"] }
 
 anyhow = "1.0.51"
 regex = "1.0.2"
