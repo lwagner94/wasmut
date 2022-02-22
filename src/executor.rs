@@ -71,7 +71,7 @@ impl<'a> Executor<'a> {
     ) -> Result<Vec<ExecutionResult>> {
         let mut runtime = if self.coverage {
             let mut module = module.clone();
-            module.insert_trace_points();
+            module.insert_trace_points()?;
             runtime::create_runtime(&module, true, true, self.mapped_dirs)?
         } else {
             runtime::create_runtime(module, true, false, self.mapped_dirs)?

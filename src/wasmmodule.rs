@@ -241,22 +241,33 @@ impl<'a> WasmModule<'a> {
         Ok(candidates)
     }
 
-    pub fn insert_trace_points(&mut self) {
-        let type_index = self.find_or_insert_type_signature();
-        let function_index = self.add_trace_function_import(type_index);
+    /// Insert calls to our coverage tracing function.
+    pub fn insert_trace_points(&mut self) -> Result<()> {
+        // Make sure that the type signature of the trace function
+        // is contained in the function table
+        let type_index = self.find_or_insert_type_signature()?;
 
+        // Add trace function to the import section
+        let function_index = self.add_trace_function_import(type_index)?;
+
+        // Increment all function-indices, since the
+        // function section now contains the trace_function at index 0
         self.fix_call_instructions();
         self.fix_tables();
         self.fix_exports();
 
-        self.insert_calls(function_index);
+        // Finally, insert a call to the trace function before every single
+        // instruction
+        self.insert_trace_calls(function_index);
+
+        Ok(())
     }
 
-    fn find_or_insert_type_signature(&mut self) -> u32 {
+    fn find_or_insert_type_signature(&mut self) -> Result<u32> {
         let type_section = self
             .module
             .type_section_mut()
-            .expect("module does not have a type section, this is not expected!");
+            .context("module does not have a type section")?;
 
         let types = type_section.types_mut();
 
@@ -273,21 +284,21 @@ impl<'a> WasmModule<'a> {
             })
             .next();
 
-        index.unwrap_or_else(|| {
+        Ok(index.unwrap_or_else(|| {
             types.push(Type::Function(FunctionType::new(
                 vec![ValueType::I64],
                 vec![],
             )));
             (types.len() - 1) as u32
-        })
+        }))
     }
 
-    fn add_trace_function_import(&mut self, type_index: u32) -> u32 {
+    fn add_trace_function_import(&mut self, type_index: u32) -> Result<u32> {
         // TODO: What should happen if there aren't imports there yet?
         let import_section = self
             .module
             .import_section_mut()
-            .expect("TODO")
+            .context("Module does not have an import section")?
             .entries_mut();
 
         import_section.insert(
@@ -299,7 +310,7 @@ impl<'a> WasmModule<'a> {
             ),
         );
 
-        0
+        Ok(0)
     }
 
     fn fix_tables(&mut self) {
@@ -352,7 +363,7 @@ impl<'a> WasmModule<'a> {
         }
     }
 
-    fn insert_calls(&mut self, function_index: u32) {
+    fn insert_trace_calls(&mut self, function_index: u32) {
         if let Some(code_section) = self.module.code_section_mut() {
             let code_section_offset = code_section.offset();
 
@@ -513,7 +524,7 @@ mod tests {
     #[test]
     fn find_or_insert_type_signature_should_insert() -> Result<()> {
         let mut module = WasmModule::from_file("testdata/factorial/test.wasm")?;
-        let index = module.find_or_insert_type_signature();
+        let index = module.find_or_insert_type_signature()?;
         assert_eq!(index, 4);
         Ok(())
     }
@@ -521,7 +532,7 @@ mod tests {
     #[test]
     fn find_or_insert_type_signature_reuse() -> Result<()> {
         let mut module = WasmModule::from_file("testdata/i64_param/test.wasm")?;
-        let index = module.find_or_insert_type_signature();
+        let index = module.find_or_insert_type_signature()?;
         assert_eq!(index, 2);
         Ok(())
     }
@@ -529,8 +540,8 @@ mod tests {
     #[test]
     fn add_trace_function_import_expected_function_index() -> Result<()> {
         let mut module = WasmModule::from_file("testdata/i64_param/test.wasm")?;
-        let type_index = module.find_or_insert_type_signature();
-        let function_index = module.add_trace_function_import(type_index);
+        let type_index = module.find_or_insert_type_signature()?;
+        let function_index = module.add_trace_function_import(type_index)?;
         assert_eq!(function_index, 0);
         Ok(())
     }
