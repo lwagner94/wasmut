@@ -139,7 +139,7 @@ impl<'a> WasmModule<'a> {
         let instructions = self
             .module
             .code_section_mut()
-            .expect("Module does not have a code section")
+            .expect("Module does not have a code section") // TODO: Error handling?
             .bodies_mut()
             .get_mut(mutation.function_number as usize)
             .expect("unexpected funtion index")
@@ -149,6 +149,44 @@ impl<'a> WasmModule<'a> {
         mutation
             .operator
             .apply(instructions, mutation.statement_number);
+    }
+
+    /// Apply all given mutations
+    fn mutate_all(&mut self, mutations: &[&Mutation]) -> Result<()> {
+        let type_index = self.find_or_insert_check_mutant_function_signature()?;
+        let function_index =
+            self.add_trace_function_import("__wasmut_check_mutant_id", type_index)?;
+
+        let bodies = self
+            .module
+            .code_section_mut()
+            .context("Module does not have a code section")? // TODO: Error handling?
+            .bodies_mut();
+
+        for mutation in mutations {
+            let instructions = bodies
+                .get_mut(mutation.function_number as usize)
+                .context("unexpected funtion index")?
+                .code_mut()
+                .elements_mut();
+
+            let sequence = [
+                Instruction::I64Const(mutation.id),
+                Instruction::Call(function_index),
+                Instruction::If(mutation.operator.result_type()),
+                mutation.operator.new_instruction().clone(),
+                Instruction::Else,
+                mutation.operator.old_instruction().clone(),
+                Instruction::End,
+            ];
+
+            let tail = instructions.split_off(mutation.statement_number as usize);
+
+            instructions.extend_from_slice(&sequence);
+            instructions.extend_from_slice(&tail[1..]);
+        }
+
+        Ok(())
     }
 
     /// Return a set of all function names in the module
@@ -245,10 +283,10 @@ impl<'a> WasmModule<'a> {
     pub fn insert_trace_points(&mut self) -> Result<()> {
         // Make sure that the type signature of the trace function
         // is contained in the function table
-        let type_index = self.find_or_insert_type_signature()?;
+        let type_index = self.find_or_insert_trace_function_signature()?;
 
         // Add trace function to the import section
-        let function_index = self.add_trace_function_import(type_index)?;
+        let function_index = self.add_trace_function_import("__wasmut_trace", type_index)?;
 
         // Increment all function-indices, since the
         // function section now contains the trace_function at index 0
@@ -263,7 +301,19 @@ impl<'a> WasmModule<'a> {
         Ok(())
     }
 
-    fn find_or_insert_type_signature(&mut self) -> Result<u32> {
+    fn find_or_insert_trace_function_signature(&mut self) -> Result<u32> {
+        self.find_or_insert_type_signature(&[ValueType::I64], &[])
+    }
+
+    fn find_or_insert_check_mutant_function_signature(&mut self) -> Result<u32> {
+        self.find_or_insert_type_signature(&[ValueType::I64], &[ValueType::I32])
+    }
+
+    fn find_or_insert_type_signature(
+        &mut self,
+        params: &[ValueType],
+        results: &[ValueType],
+    ) -> Result<u32> {
         let type_section = self
             .module
             .type_section_mut()
@@ -276,7 +326,7 @@ impl<'a> WasmModule<'a> {
             .enumerate()
             .filter_map(|(i, t)| {
                 let Type::Function(f) = t;
-                if f.params() == [ValueType::I64] && f.results().is_empty() {
+                if f.params() == params && f.results() == results {
                     Some(i as u32)
                 } else {
                     None
@@ -286,14 +336,14 @@ impl<'a> WasmModule<'a> {
 
         Ok(index.unwrap_or_else(|| {
             types.push(Type::Function(FunctionType::new(
-                vec![ValueType::I64],
-                vec![],
+                params.into(),
+                results.into(),
             )));
             (types.len() - 1) as u32
         }))
     }
 
-    fn add_trace_function_import(&mut self, type_index: u32) -> Result<u32> {
+    fn add_trace_function_import(&mut self, func_name: &str, type_index: u32) -> Result<u32> {
         // TODO: What should happen if there aren't imports there yet?
         let import_section = self
             .module
@@ -305,7 +355,7 @@ impl<'a> WasmModule<'a> {
             0,
             ImportEntry::new(
                 "wasmut_api".into(),
-                "__wasmut_trace".into(),
+                func_name.into(),
                 External::Function(type_index),
             ),
         );
@@ -524,7 +574,7 @@ mod tests {
     #[test]
     fn find_or_insert_type_signature_should_insert() -> Result<()> {
         let mut module = WasmModule::from_file("testdata/factorial/test.wasm")?;
-        let index = module.find_or_insert_type_signature()?;
+        let index = module.find_or_insert_trace_function_signature()?;
         assert_eq!(index, 4);
         Ok(())
     }
@@ -532,7 +582,7 @@ mod tests {
     #[test]
     fn find_or_insert_type_signature_reuse() -> Result<()> {
         let mut module = WasmModule::from_file("testdata/i64_param/test.wasm")?;
-        let index = module.find_or_insert_type_signature()?;
+        let index = module.find_or_insert_trace_function_signature()?;
         assert_eq!(index, 2);
         Ok(())
     }
@@ -540,8 +590,8 @@ mod tests {
     #[test]
     fn add_trace_function_import_expected_function_index() -> Result<()> {
         let mut module = WasmModule::from_file("testdata/i64_param/test.wasm")?;
-        let type_index = module.find_or_insert_type_signature()?;
-        let function_index = module.add_trace_function_import(type_index)?;
+        let type_index = module.find_or_insert_trace_function_signature()?;
+        let function_index = module.add_trace_function_import("__wasmut_trace", type_index)?;
         assert_eq!(function_index, 0);
         Ok(())
     }
