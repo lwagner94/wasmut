@@ -240,6 +240,10 @@ impl<'a> SyntectFileContext<'a> {
 
 #[cfg(test)]
 mod tests {
+    use parity_wasm::elements::Instruction;
+
+    use crate::operator::ops::BinaryOperatorAddToSub;
+
     use super::*;
 
     #[test]
@@ -278,40 +282,32 @@ mod tests {
         // support clone()
         let mutation = vec![
             Mutation {
+                id: 0,
                 function_number: 1,
                 statement_number: 2,
                 offset: 34,
-                operator: Box::new(crate::operator::ops::BinaryOperatorAddToSub(
-                    parity_wasm::elements::Instruction::I32Add,
-                    parity_wasm::elements::Instruction::I32Sub,
-                )),
+                operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
             Mutation {
+                id: 1,
                 function_number: 1,
                 statement_number: 2,
                 offset: 34,
-                operator: Box::new(crate::operator::ops::BinaryOperatorAddToSub(
-                    parity_wasm::elements::Instruction::I32Add,
-                    parity_wasm::elements::Instruction::I32Sub,
-                )),
+                operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
             Mutation {
+                id: 2,
                 function_number: 1,
                 statement_number: 2,
                 offset: 34,
-                operator: Box::new(crate::operator::ops::BinaryOperatorAddToSub(
-                    parity_wasm::elements::Instruction::I32Add,
-                    parity_wasm::elements::Instruction::I32Sub,
-                )),
+                operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
             Mutation {
+                id: 3,
                 function_number: 1,
                 statement_number: 2,
                 offset: 34,
-                operator: Box::new(crate::operator::ops::BinaryOperatorAddToSub(
-                    parity_wasm::elements::Instruction::I32Add,
-                    parity_wasm::elements::Instruction::I32Sub,
-                )),
+                operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
         ];
 

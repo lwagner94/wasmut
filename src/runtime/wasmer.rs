@@ -21,24 +21,35 @@ use wasmer_wasi::{Pipe, WasiError, WasiState};
 #[derive(WasmerEnv, Clone, Default)]
 struct TraceEnv {
     points: Arc<Mutex<HashSet<u64>>>,
+    activated_mutant_id: i64,
 }
 
 fn trace(env: &TraceEnv, address: i64) {
     let mut vec = env.points.lock().unwrap();
     vec.insert(address as u64);
 }
+
+fn check_mutant_id(env: &TraceEnv, mutant_id: i64) -> i32 {
+    // if env.activated_mutant_id == mutant_id {
+    //     1
+    // } else {
+    //     0
+    // }
+
+    1
+}
+
 use super::WasmModule;
 
 pub struct WasmerRuntime {
     instance: wasmer::Instance,
-    trace_env: Option<TraceEnv>,
+    trace_env: TraceEnv,
 }
 
 impl Runtime for WasmerRuntime {
     fn new(
         module: &WasmModule,
         discard_output: bool,
-        coverage: bool,
         map_dirs: &[(String, String)],
     ) -> Result<Self> {
         let store = create_store();
@@ -46,11 +57,12 @@ impl Runtime for WasmerRuntime {
         let mut import_object =
             create_wasi_import_object(discard_output, map_dirs, &wasmer_module)?;
 
-        let trace_env = if coverage {
-            Some(add_trace_function(store, &mut import_object))
-        } else {
-            None
-        };
+        // let trace_env = if coverage {
+        //     Some()
+        // } else {
+        //     None
+        // };
+        let trace_env = add_trace_function(&store, &mut import_object);
 
         Ok(WasmerRuntime {
             instance: Instance::new(&wasmer_module, &import_object)
@@ -116,20 +128,23 @@ impl Runtime for WasmerRuntime {
         }
     }
 
-    fn trace_points(&self) -> Option<HashSet<u64>> {
-        self.trace_env.as_ref().map(|env| {
-            let points = env.points.lock().unwrap();
-            points.clone()
-        })
+    fn trace_points(&self) -> HashSet<u64> {
+        let points = self.trace_env.points.as_ref().lock().unwrap();
+        points.clone()
     }
 }
 
-fn add_trace_function(store: Store, import_object: &mut ImportObject) -> TraceEnv {
+fn add_trace_function(store: &Store, import_object: &mut ImportObject) -> TraceEnv {
     let mut exports = Exports::new();
     let trace_env: TraceEnv = Default::default();
     exports.insert(
         "__wasmut_trace",
-        Function::new_native_with_env(&store, trace_env.clone(), trace),
+        Function::new_native_with_env(store, trace_env.clone(), trace),
+    );
+
+    exports.insert(
+        "__wasmut_check_mutant_id",
+        Function::new_native_with_env(store, trace_env.clone(), check_mutant_id),
     );
     import_object.register("wasmut_api", exports);
     trace_env
@@ -197,7 +212,7 @@ mod tests {
     #[test]
     fn test_run_entry_point() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        let mut runtime = WasmerRuntime::new(&module, true, false, &[])?;
+        let mut runtime = WasmerRuntime::new(&module, true, &[])?;
 
         let result = runtime.call_test_function(ExecutionPolicy::RunUntilReturn)?;
 
@@ -219,7 +234,7 @@ mod tests {
     #[test]
     fn test_execution_limit() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        let mut runtime = WasmerRuntime::new(&module, true, false, &[])?;
+        let mut runtime = WasmerRuntime::new(&module, true, &[])?;
 
         let result = runtime.call_test_function(ExecutionPolicy::RunUntilLimit { limit: 1 })?;
 

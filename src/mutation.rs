@@ -4,10 +4,15 @@ use crate::operator::OperatorRegistry;
 use crate::wasmmodule::CallbackType;
 use crate::{config::Config, policy::MutationPolicy, wasmmodule::WasmModule};
 use anyhow::Result;
+use atomic_counter::AtomicCounter;
+use atomic_counter::RelaxedCounter;
 
 /// Definition of a position where and how a module is mutated.
 #[derive(Debug)]
 pub struct Mutation {
+    /// A unique ID for this mutation
+    pub id: i64,
+
     /// The index in the module's function table
     pub function_number: u64,
 
@@ -54,6 +59,8 @@ impl MutationEngine {
         let call_removal_candidates = module.call_removal_candidates()?;
         let context = InstructionContext::new(call_removal_candidates);
 
+        let id_counter = RelaxedCounter::new(0);
+
         // Define a callback function that is used by wasmmodule::instruction_walker
         // The callback is called for every single instruction of the module
         // and is passed the instruction and the location within
@@ -64,6 +71,7 @@ impl MutationEngine {
                     .mutants_for_instruction(instruction, &context)
                     .into_iter()
                     .map(|operator| Mutation {
+                        id: id_counter.inc() as i64,
                         function_number: location.function_index,
                         statement_number: location.instruction_index,
                         offset: location.instruction_offset,

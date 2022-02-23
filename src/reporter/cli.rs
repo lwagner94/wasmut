@@ -196,10 +196,7 @@ mod tests {
                 column: Some(14),
             },
             outcome: MutationOutcome::Timeout,
-            operator: Box::new(BinaryOperatorAddToSub(
-                Instruction::I32Add,
-                Instruction::I32Sub,
-            )),
+            operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
         }];
 
         let output = report_to_string(executed_mutants);
@@ -220,10 +217,7 @@ mod tests {
                     column: Some(14),
                 },
                 outcome: MutationOutcome::Alive,
-                operator: Box::new(BinaryOperatorAddToSub(
-                    Instruction::I32Add,
-                    Instruction::I32Sub,
-                )),
+                operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
             ExecutedMutant {
                 location: CodeLocation {
@@ -233,10 +227,7 @@ mod tests {
                     column: Some(14),
                 },
                 outcome: MutationOutcome::Killed,
-                operator: Box::new(BinaryOperatorAddToSub(
-                    Instruction::I32Add,
-                    Instruction::I32Sub,
-                )),
+                operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
             ExecutedMutant {
                 location: CodeLocation {
@@ -246,10 +237,7 @@ mod tests {
                     column: Some(14),
                 },
                 outcome: MutationOutcome::Timeout,
-                operator: Box::new(BinaryOperatorAddToSub(
-                    Instruction::I32Add,
-                    Instruction::I32Sub,
-                )),
+                operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
             ExecutedMutant {
                 location: CodeLocation {
@@ -259,10 +247,7 @@ mod tests {
                     column: Some(14),
                 },
                 outcome: MutationOutcome::Error,
-                operator: Box::new(BinaryOperatorAddToSub(
-                    Instruction::I32Add,
-                    Instruction::I32Sub,
-                )),
+                operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
         ];
 

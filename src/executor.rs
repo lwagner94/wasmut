@@ -37,7 +37,7 @@ impl<'a> Executor<'a> {
     ///
     /// The stdout/stderr output of the module will not be supressed
     pub fn execute(&self, module: &WasmModule) -> Result<()> {
-        let mut runtime = runtime::create_runtime(module, false, false, self.mapped_dirs)?;
+        let mut runtime = runtime::create_runtime(module, false, self.mapped_dirs)?;
 
         // TODO: Code duplication?
         match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
@@ -72,9 +72,9 @@ impl<'a> Executor<'a> {
         let mut runtime = if self.coverage {
             let mut module = module.clone();
             module.insert_trace_points()?;
-            runtime::create_runtime(&module, true, true, self.mapped_dirs)?
+            runtime::create_runtime(&module, true, self.mapped_dirs)?
         } else {
-            runtime::create_runtime(module, true, false, self.mapped_dirs)?
+            runtime::create_runtime(module, true, self.mapped_dirs)?
         };
 
         let mut execution_cost =
@@ -113,18 +113,15 @@ impl<'a> Executor<'a> {
             .par_iter()
             .progress_with(pb.clone())
             .map(|mutation| {
-                if let Some(points) = trace_points.as_ref() {
-                    if !points.contains(&mutation.offset) {
-                        return ExecutionResult::Skipped;
-                    }
+                if self.coverage && !trace_points.contains(&mutation.offset) {
+                    return ExecutionResult::Skipped;
                 }
 
                 let module = module.mutated_clone(mutation);
 
                 let policy = ExecutionPolicy::RunUntilLimit { limit };
 
-                let mut runtime =
-                    runtime::create_runtime(&module, true, false, self.mapped_dirs).unwrap();
+                let mut runtime = runtime::create_runtime(&module, true, self.mapped_dirs).unwrap();
                 runtime.call_test_function(policy).unwrap()
             })
             .collect();
@@ -150,6 +147,10 @@ impl<'a> Executor<'a> {
 
 #[cfg(test)]
 mod tests {
+
+    use parity_wasm::elements::Instruction;
+
+    use crate::operator::ops::{BinaryOperatorAddToSub, ConstReplaceNonZero};
 
     use super::*;
 
@@ -190,13 +191,11 @@ mod tests {
     #[test]
     fn execute_mutant() -> Result<()> {
         let mutations = vec![Mutation {
+            id: 0,
             function_number: 1,
             statement_number: 2,
             offset: 37,
-            operator: Box::new(crate::operator::ops::BinaryOperatorAddToSub(
-                parity_wasm::elements::Instruction::I32Add,
-                parity_wasm::elements::Instruction::I32Sub,
-            )),
+            operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
         }];
 
         let result = mutate_module("simple_add", &mutations)?;
@@ -211,13 +210,11 @@ mod tests {
     #[test]
     fn skip_because_not_covered() -> Result<()> {
         let mutations = vec![Mutation {
+            id: 0,
             function_number: 3,
             statement_number: 0,
             offset: 46,
-            operator: Box::new(crate::operator::ops::ConstReplaceNonZero(
-                parity_wasm::elements::Instruction::I32Const(-1),
-                parity_wasm::elements::Instruction::I32Const(0),
-            )),
+            operator: Box::new(ConstReplaceNonZero::new(&Instruction::I32Const(-1)).unwrap()),
         }];
 
         let module = WasmModule::from_file("testdata/no_coverage/test.wasm")?;

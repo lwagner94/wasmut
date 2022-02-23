@@ -2,6 +2,7 @@ pub mod ops;
 
 use anyhow::Result;
 use ops::*;
+use parity_wasm::elements::BlockType;
 #[allow(unused_imports)]
 use parity_wasm::elements::Instruction::{self, *};
 
@@ -10,6 +11,8 @@ use crate::wasmmodule::CallRemovalCandidate;
 pub trait InstructionReplacement: Send + Sync + std::fmt::Debug {
     fn old_instruction(&self) -> &Instruction;
     fn new_instruction(&self) -> &Instruction;
+
+    fn result_type(&self) -> BlockType;
 
     fn description(&self) -> String;
 
@@ -153,12 +156,15 @@ impl OperatorRegistry {
 #[cfg(test)]
 mod tests {
     use crate::wasmmodule::Datatype;
+    #[allow(unused_imports)]
+    use pretty_assertions::{assert_eq, assert_ne};
 
     use super::*;
     use concat_idents::concat_idents;
+    use parity_wasm::elements::ValueType;
 
     macro_rules! generate_test {
-        ($operator:ident, $original:ident, $replacement:ident) => {
+        ($operator:ident, $original:ident, $replacement:ident, $block_type:expr) => {
             concat_idents!(test_name = $operator, _enabled_, $original, _, $replacement {
                 #[allow(non_snake_case)]
                 #[test]
@@ -179,6 +185,7 @@ mod tests {
                             found = true;
                         }
 
+                        assert_eq!(op.result_type(), $block_type);
                         let description = op.description();
                         assert!(description.len() > 0);
                         assert!(description.contains(stringify!($operator)));
@@ -203,7 +210,7 @@ mod tests {
      }
 
     macro_rules! generate_const_test {
-        ($operator:ident, $suffix:ident, $original:expr, $replacement:expr) => {
+        ($operator:ident, $suffix:ident, $original:expr, $replacement:expr, $block_type:expr) => {
             concat_idents!(test_name = $operator, _, $suffix,  _enabled {
                 #[allow(non_snake_case)]
                 #[test]
@@ -217,6 +224,8 @@ mod tests {
                     let mut instr = vec![$original];
                     ops[0].apply(&mut instr, 0);
                     assert_eq!(instr[0], $replacement);
+                    assert_eq!(ops[0].result_type(), $block_type);
+
                     let description = ops[0].description();
                     assert!(description.len() > 0);
                     assert!(description.contains(stringify!($operator)));
@@ -237,160 +246,698 @@ mod tests {
         };
      }
 
-    generate_test!(binop_sub_to_add, I32Sub, I32Add);
-    generate_test!(binop_sub_to_add, I64Sub, I64Add);
-    generate_test!(binop_sub_to_add, F32Sub, F32Add);
-    generate_test!(binop_sub_to_add, F64Sub, F64Add);
+    generate_test!(
+        binop_sub_to_add,
+        I32Sub,
+        I32Add,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_sub_to_add,
+        I64Sub,
+        I64Add,
+        BlockType::Value(ValueType::I64)
+    );
+    generate_test!(
+        binop_sub_to_add,
+        F32Sub,
+        F32Add,
+        BlockType::Value(ValueType::F32)
+    );
+    generate_test!(
+        binop_sub_to_add,
+        F64Sub,
+        F64Add,
+        BlockType::Value(ValueType::F64)
+    );
 
-    generate_test!(binop_add_to_sub, I32Add, I32Sub);
-    generate_test!(binop_add_to_sub, I64Add, I64Sub);
-    generate_test!(binop_add_to_sub, F32Add, F32Sub);
-    generate_test!(binop_add_to_sub, F64Add, F64Sub);
+    generate_test!(
+        binop_add_to_sub,
+        I32Add,
+        I32Sub,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_add_to_sub,
+        I64Add,
+        I64Sub,
+        BlockType::Value(ValueType::I64)
+    );
+    generate_test!(
+        binop_add_to_sub,
+        F32Add,
+        F32Sub,
+        BlockType::Value(ValueType::F32)
+    );
+    generate_test!(
+        binop_add_to_sub,
+        F64Add,
+        F64Sub,
+        BlockType::Value(ValueType::F64)
+    );
 
-    generate_test!(binop_mul_to_div, I32Mul, I32DivU);
-    generate_test!(binop_mul_to_div, I32Mul, I32DivS);
-    generate_test!(binop_mul_to_div, I64Mul, I64DivU);
-    generate_test!(binop_mul_to_div, I64Mul, I64DivS);
-    generate_test!(binop_mul_to_div, F32Mul, F32Div);
-    generate_test!(binop_mul_to_div, F64Mul, F64Div);
+    generate_test!(
+        binop_mul_to_div,
+        I32Mul,
+        I32DivU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_mul_to_div,
+        I32Mul,
+        I32DivS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_mul_to_div,
+        I64Mul,
+        I64DivU,
+        BlockType::Value(ValueType::I64)
+    );
+    generate_test!(
+        binop_mul_to_div,
+        I64Mul,
+        I64DivS,
+        BlockType::Value(ValueType::I64)
+    );
+    generate_test!(
+        binop_mul_to_div,
+        F32Mul,
+        F32Div,
+        BlockType::Value(ValueType::F32)
+    );
+    generate_test!(
+        binop_mul_to_div,
+        F64Mul,
+        F64Div,
+        BlockType::Value(ValueType::F64)
+    );
 
-    generate_test!(binop_div_to_mul, I32DivU, I32Mul);
-    generate_test!(binop_div_to_mul, I32DivS, I32Mul);
-    generate_test!(binop_div_to_mul, I64DivU, I64Mul);
-    generate_test!(binop_div_to_mul, I64DivS, I64Mul);
-    generate_test!(binop_div_to_mul, F32Div, F32Mul);
-    generate_test!(binop_div_to_mul, F64Div, F64Mul);
+    generate_test!(
+        binop_div_to_mul,
+        I32DivU,
+        I32Mul,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_div_to_mul,
+        I32DivS,
+        I32Mul,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_div_to_mul,
+        I64DivU,
+        I64Mul,
+        BlockType::Value(ValueType::I64)
+    );
+    generate_test!(
+        binop_div_to_mul,
+        I64DivS,
+        I64Mul,
+        BlockType::Value(ValueType::I64)
+    );
+    generate_test!(
+        binop_div_to_mul,
+        F32Div,
+        F32Mul,
+        BlockType::Value(ValueType::F32)
+    );
+    generate_test!(
+        binop_div_to_mul,
+        F64Div,
+        F64Mul,
+        BlockType::Value(ValueType::F64)
+    );
 
-    generate_test!(binop_shl_to_shr, I32Shl, I32ShrU);
-    generate_test!(binop_shl_to_shr, I32Shl, I32ShrS);
-    generate_test!(binop_shl_to_shr, I64Shl, I64ShrU);
-    generate_test!(binop_shl_to_shr, I64Shl, I64ShrS);
+    generate_test!(
+        binop_shl_to_shr,
+        I32Shl,
+        I32ShrU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_shl_to_shr,
+        I32Shl,
+        I32ShrS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_shl_to_shr,
+        I64Shl,
+        I64ShrU,
+        BlockType::Value(ValueType::I64)
+    );
+    generate_test!(
+        binop_shl_to_shr,
+        I64Shl,
+        I64ShrS,
+        BlockType::Value(ValueType::I64)
+    );
 
-    generate_test!(binop_rem_to_div, I32RemU, I32DivU);
-    generate_test!(binop_rem_to_div, I32RemS, I32DivS);
-    generate_test!(binop_rem_to_div, I64RemU, I64DivU);
-    generate_test!(binop_rem_to_div, I64RemS, I64DivS);
+    generate_test!(
+        binop_rem_to_div,
+        I32RemU,
+        I32DivU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_rem_to_div,
+        I32RemS,
+        I32DivS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_rem_to_div,
+        I64RemU,
+        I64DivU,
+        BlockType::Value(ValueType::I64)
+    );
+    generate_test!(
+        binop_rem_to_div,
+        I64RemS,
+        I64DivS,
+        BlockType::Value(ValueType::I64)
+    );
 
-    generate_test!(binop_div_to_rem, I32DivU, I32RemU);
-    generate_test!(binop_div_to_rem, I32DivS, I32RemS);
-    generate_test!(binop_div_to_rem, I64DivU, I64RemU);
-    generate_test!(binop_div_to_rem, I64DivS, I64RemS);
+    generate_test!(
+        binop_div_to_rem,
+        I32DivU,
+        I32RemU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_div_to_rem,
+        I32DivS,
+        I32RemS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_div_to_rem,
+        I64DivU,
+        I64RemU,
+        BlockType::Value(ValueType::I64)
+    );
+    generate_test!(
+        binop_div_to_rem,
+        I64DivS,
+        I64RemS,
+        BlockType::Value(ValueType::I64)
+    );
 
-    generate_test!(binop_and_to_or, I32And, I32Or);
-    generate_test!(binop_and_to_or, I64And, I64Or);
+    generate_test!(
+        binop_and_to_or,
+        I32And,
+        I32Or,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_and_to_or,
+        I64And,
+        I64Or,
+        BlockType::Value(ValueType::I64)
+    );
 
-    generate_test!(binop_or_to_and, I32Or, I32And);
-    generate_test!(binop_or_to_and, I64Or, I64And);
+    generate_test!(
+        binop_or_to_and,
+        I32Or,
+        I32And,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_or_to_and,
+        I64Or,
+        I64And,
+        BlockType::Value(ValueType::I64)
+    );
 
-    generate_test!(binop_xor_to_or, I32Xor, I32Or);
-    generate_test!(binop_xor_to_or, I64Xor, I64Or);
+    generate_test!(
+        binop_xor_to_or,
+        I32Xor,
+        I32Or,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_xor_to_or,
+        I64Xor,
+        I64Or,
+        BlockType::Value(ValueType::I64)
+    );
 
-    generate_test!(binop_or_to_xor, I32Or, I32Xor);
-    generate_test!(binop_or_to_xor, I64Or, I64Xor);
+    generate_test!(
+        binop_or_to_xor,
+        I32Or,
+        I32Xor,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_or_to_xor,
+        I64Or,
+        I64Xor,
+        BlockType::Value(ValueType::I64)
+    );
 
-    generate_test!(binop_rotl_to_rotr, I32Rotl, I32Rotr);
-    generate_test!(binop_rotl_to_rotr, I64Rotl, I64Rotr);
+    generate_test!(
+        binop_rotl_to_rotr,
+        I32Rotl,
+        I32Rotr,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_rotl_to_rotr,
+        I64Rotl,
+        I64Rotr,
+        BlockType::Value(ValueType::I64)
+    );
 
-    generate_test!(binop_rotr_to_rotl, I32Rotr, I32Rotl);
-    generate_test!(binop_rotr_to_rotl, I64Rotr, I64Rotl);
+    generate_test!(
+        binop_rotr_to_rotl,
+        I32Rotr,
+        I32Rotl,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        binop_rotr_to_rotl,
+        I64Rotr,
+        I64Rotl,
+        BlockType::Value(ValueType::I64)
+    );
 
-    generate_test!(unop_neg_to_nop, F32Neg, Nop);
-    generate_test!(unop_neg_to_nop, F64Neg, Nop);
+    generate_test!(
+        unop_neg_to_nop,
+        F32Neg,
+        Nop,
+        BlockType::Value(ValueType::F32)
+    );
+    generate_test!(
+        unop_neg_to_nop,
+        F64Neg,
+        Nop,
+        BlockType::Value(ValueType::F64)
+    );
 
-    generate_test!(relop_eq_to_ne, I32Eq, I32Ne);
-    generate_test!(relop_eq_to_ne, I64Eq, I64Ne);
-    generate_test!(relop_eq_to_ne, F32Eq, F32Ne);
-    generate_test!(relop_eq_to_ne, F64Eq, F64Ne);
+    generate_test!(
+        relop_eq_to_ne,
+        I32Eq,
+        I32Ne,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_eq_to_ne,
+        I64Eq,
+        I64Ne,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_eq_to_ne,
+        F32Eq,
+        F32Ne,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_eq_to_ne,
+        F64Eq,
+        F64Ne,
+        BlockType::Value(ValueType::I32)
+    );
 
-    generate_test!(relop_ne_to_eq, I32Ne, I32Eq);
-    generate_test!(relop_ne_to_eq, I64Ne, I64Eq);
-    generate_test!(relop_ne_to_eq, F32Ne, F32Eq);
-    generate_test!(relop_ne_to_eq, F64Ne, F64Eq);
+    generate_test!(
+        relop_ne_to_eq,
+        I32Ne,
+        I32Eq,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_ne_to_eq,
+        I64Ne,
+        I64Eq,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_ne_to_eq,
+        F32Ne,
+        F32Eq,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_ne_to_eq,
+        F64Ne,
+        F64Eq,
+        BlockType::Value(ValueType::I32)
+    );
 
-    generate_test!(relop_le_to_gt, I32LeU, I32GtU);
-    generate_test!(relop_le_to_gt, I32LeS, I32GtS);
-    generate_test!(relop_le_to_gt, I64LeU, I64GtU);
-    generate_test!(relop_le_to_gt, I64LeS, I64GtS);
-    generate_test!(relop_le_to_gt, F32Le, F32Gt);
-    generate_test!(relop_le_to_gt, F64Le, F64Gt);
+    generate_test!(
+        relop_le_to_gt,
+        I32LeU,
+        I32GtU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_le_to_gt,
+        I32LeS,
+        I32GtS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_le_to_gt,
+        I64LeU,
+        I64GtU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_le_to_gt,
+        I64LeS,
+        I64GtS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_le_to_gt,
+        F32Le,
+        F32Gt,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_le_to_gt,
+        F64Le,
+        F64Gt,
+        BlockType::Value(ValueType::I32)
+    );
 
-    generate_test!(relop_le_to_lt, I32LeU, I32LtU);
-    generate_test!(relop_le_to_lt, I32LeS, I32LtS);
-    generate_test!(relop_le_to_lt, I64LeU, I64LtU);
-    generate_test!(relop_le_to_lt, I64LeS, I64LtS);
-    generate_test!(relop_le_to_lt, F32Le, F32Lt);
-    generate_test!(relop_le_to_lt, F64Le, F64Lt);
+    generate_test!(
+        relop_le_to_lt,
+        I32LeU,
+        I32LtU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_le_to_lt,
+        I32LeS,
+        I32LtS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_le_to_lt,
+        I64LeU,
+        I64LtU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_le_to_lt,
+        I64LeS,
+        I64LtS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_le_to_lt,
+        F32Le,
+        F32Lt,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_le_to_lt,
+        F64Le,
+        F64Lt,
+        BlockType::Value(ValueType::I32)
+    );
 
-    generate_test!(relop_lt_to_ge, I32LtU, I32GeU);
-    generate_test!(relop_lt_to_ge, I32LtS, I32GeS);
-    generate_test!(relop_lt_to_ge, I64LtU, I64GeU);
-    generate_test!(relop_lt_to_ge, I64LtS, I64GeS);
-    generate_test!(relop_lt_to_ge, F32Lt, F32Ge);
-    generate_test!(relop_lt_to_ge, F64Lt, F64Ge);
+    generate_test!(
+        relop_lt_to_ge,
+        I32LtU,
+        I32GeU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_lt_to_ge,
+        I32LtS,
+        I32GeS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_lt_to_ge,
+        I64LtU,
+        I64GeU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_lt_to_ge,
+        I64LtS,
+        I64GeS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_lt_to_ge,
+        F32Lt,
+        F32Ge,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_lt_to_ge,
+        F64Lt,
+        F64Ge,
+        BlockType::Value(ValueType::I32)
+    );
 
-    generate_test!(relop_lt_to_le, I32LtU, I32LeU);
-    generate_test!(relop_lt_to_le, I32LtS, I32LeS);
-    generate_test!(relop_lt_to_le, I64LtU, I64LeU);
-    generate_test!(relop_lt_to_le, I64LtS, I64LeS);
-    generate_test!(relop_lt_to_le, F32Lt, F32Le);
-    generate_test!(relop_lt_to_le, F64Lt, F64Le);
+    generate_test!(
+        relop_lt_to_le,
+        I32LtU,
+        I32LeU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_lt_to_le,
+        I32LtS,
+        I32LeS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_lt_to_le,
+        I64LtU,
+        I64LeU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_lt_to_le,
+        I64LtS,
+        I64LeS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_lt_to_le,
+        F32Lt,
+        F32Le,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_lt_to_le,
+        F64Lt,
+        F64Le,
+        BlockType::Value(ValueType::I32)
+    );
 
-    generate_test!(relop_ge_to_gt, I32GeU, I32GtU);
-    generate_test!(relop_ge_to_gt, I32GeS, I32GtS);
-    generate_test!(relop_ge_to_gt, I64GeU, I64GtU);
-    generate_test!(relop_ge_to_gt, I64GeS, I64GtS);
-    generate_test!(relop_ge_to_gt, F32Ge, F32Gt);
-    generate_test!(relop_ge_to_gt, F64Ge, F64Gt);
+    generate_test!(
+        relop_ge_to_gt,
+        I32GeU,
+        I32GtU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_ge_to_gt,
+        I32GeS,
+        I32GtS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_ge_to_gt,
+        I64GeU,
+        I64GtU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_ge_to_gt,
+        I64GeS,
+        I64GtS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_ge_to_gt,
+        F32Ge,
+        F32Gt,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_ge_to_gt,
+        F64Ge,
+        F64Gt,
+        BlockType::Value(ValueType::I32)
+    );
 
-    generate_test!(relop_ge_to_lt, I32GeU, I32LtU);
-    generate_test!(relop_ge_to_lt, I32GeS, I32LtS);
-    generate_test!(relop_ge_to_lt, I64GeU, I64LtU);
-    generate_test!(relop_ge_to_lt, I64GeS, I64LtS);
-    generate_test!(relop_ge_to_lt, F32Ge, F32Lt);
-    generate_test!(relop_ge_to_lt, F64Ge, F64Lt);
+    generate_test!(
+        relop_ge_to_lt,
+        I32GeU,
+        I32LtU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_ge_to_lt,
+        I32GeS,
+        I32LtS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_ge_to_lt,
+        I64GeU,
+        I64LtU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_ge_to_lt,
+        I64GeS,
+        I64LtS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_ge_to_lt,
+        F32Ge,
+        F32Lt,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_ge_to_lt,
+        F64Ge,
+        F64Lt,
+        BlockType::Value(ValueType::I32)
+    );
 
-    generate_test!(relop_gt_to_ge, I32GtU, I32GeU);
-    generate_test!(relop_gt_to_ge, I32GtS, I32GeS);
-    generate_test!(relop_gt_to_ge, I64GtU, I64GeU);
-    generate_test!(relop_gt_to_ge, I64GtS, I64GeS);
-    generate_test!(relop_gt_to_ge, F32Gt, F32Ge);
-    generate_test!(relop_gt_to_ge, F64Gt, F64Ge);
+    generate_test!(
+        relop_gt_to_ge,
+        I32GtU,
+        I32GeU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_gt_to_ge,
+        I32GtS,
+        I32GeS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_gt_to_ge,
+        I64GtU,
+        I64GeU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_gt_to_ge,
+        I64GtS,
+        I64GeS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_gt_to_ge,
+        F32Gt,
+        F32Ge,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_gt_to_ge,
+        F64Gt,
+        F64Ge,
+        BlockType::Value(ValueType::I32)
+    );
 
-    generate_test!(relop_gt_to_le, I32GtU, I32LeU);
-    generate_test!(relop_gt_to_le, I32GtS, I32LeS);
-    generate_test!(relop_gt_to_le, I64GtU, I64LeU);
-    generate_test!(relop_gt_to_le, I64GtS, I64LeS);
-    generate_test!(relop_gt_to_le, F32Gt, F32Le);
-    generate_test!(relop_gt_to_le, F64Gt, F64Le);
+    generate_test!(
+        relop_gt_to_le,
+        I32GtU,
+        I32LeU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_gt_to_le,
+        I32GtS,
+        I32LeS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_gt_to_le,
+        I64GtU,
+        I64LeU,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_gt_to_le,
+        I64GtS,
+        I64LeS,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_gt_to_le,
+        F32Gt,
+        F32Le,
+        BlockType::Value(ValueType::I32)
+    );
+    generate_test!(
+        relop_gt_to_le,
+        F64Gt,
+        F64Le,
+        BlockType::Value(ValueType::I32)
+    );
 
-    generate_const_test!(const_replace_zero, i32, I32Const(0), I32Const(42));
-    generate_const_test!(const_replace_zero, i64, I64Const(0), I64Const(42));
+    generate_const_test!(
+        const_replace_zero,
+        i32,
+        I32Const(0),
+        I32Const(42),
+        BlockType::Value(ValueType::I32)
+    );
+    generate_const_test!(
+        const_replace_zero,
+        i64,
+        I64Const(0),
+        I64Const(42),
+        BlockType::Value(ValueType::I64)
+    );
     generate_const_test!(
         const_replace_zero,
         f32,
         F32Const(0f32.to_bits()),
-        F32Const(42f32.to_bits())
+        F32Const(42f32.to_bits()),
+        BlockType::Value(ValueType::F32)
     );
     generate_const_test!(
         const_replace_zero,
         f64,
         F64Const(0f64.to_bits()),
-        F64Const(42f64.to_bits())
+        F64Const(42f64.to_bits()),
+        BlockType::Value(ValueType::F64)
     );
 
-    generate_const_test!(const_replace_nonzero, i32, I32Const(1337), I32Const(0));
-    generate_const_test!(const_replace_nonzero, i64, I64Const(1337), I64Const(0));
+    generate_const_test!(
+        const_replace_nonzero,
+        i32,
+        I32Const(1337),
+        I32Const(0),
+        BlockType::Value(ValueType::I32)
+    );
+    generate_const_test!(
+        const_replace_nonzero,
+        i64,
+        I64Const(1337),
+        I64Const(0),
+        BlockType::Value(ValueType::I64)
+    );
     generate_const_test!(
         const_replace_nonzero,
         f32,
         F32Const(1337f32.to_bits()),
-        F32Const(0f32.to_bits())
+        F32Const(0f32.to_bits()),
+        BlockType::Value(ValueType::F32)
     );
     generate_const_test!(
         const_replace_nonzero,
         f64,
         F64Const(1337f64.to_bits()),
-        F64Const(0f64.to_bits())
+        F64Const(0f64.to_bits()),
+        BlockType::Value(ValueType::F64)
     );
 
     #[test]
@@ -403,6 +950,7 @@ mod tests {
 
         let ops = registry.mutants_for_instruction(&Call(0), &context);
         assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0].result_type(), BlockType::NoResult);
 
         let mut instructions = vec![I32Const(10), I32Const(12), Call(0), I32Const(13), Call(1)];
 
@@ -448,6 +996,7 @@ mod tests {
 
                     let ops = registry.mutants_for_instruction(&Call(0), &context);
                     assert_eq!(ops.len(), 1);
+                    assert_eq!(ops[0].result_type(), BlockType::Value(ValueType::$datatype));
 
                     let mut instructions = vec![I32Const(10), I32Const(12), Call(0), I32Const(13), Call(1)];
 
