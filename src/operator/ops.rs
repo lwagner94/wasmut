@@ -30,7 +30,7 @@ macro_rules! common_functions {
 
 macro_rules! implement_replacement_op {
     ($op_name:ident, $name:expr, $($from:path => $to:path > $result:expr),* $(,)?) => {
-        #[derive(Debug)]
+        #[derive(Debug, Clone)]
         pub struct $op_name {
             pub old: Instruction,
             pub new: Instruction,
@@ -312,7 +312,7 @@ implement_replacement_op! {
     F64Gt  => F64Le > BlockType::Value(ValueType::I32),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ConstReplaceZero {
     pub old: Instruction,
     pub new: Instruction,
@@ -372,7 +372,7 @@ impl ConstReplaceZero {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ConstReplaceNonZero {
     pub old: Instruction,
     pub new: Instruction,
@@ -432,7 +432,7 @@ impl ConstReplaceNonZero {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CallRemoveVoidCall {
     pub old: Instruction,
     pub new: Instruction,
@@ -499,7 +499,7 @@ impl CallRemoveVoidCall {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 
 pub struct CallRemoveScalarCall {
     pub old: Instruction,

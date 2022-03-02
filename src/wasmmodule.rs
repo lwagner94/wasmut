@@ -1,6 +1,9 @@
 use std::{borrow::Cow, collections::HashSet};
 
-use crate::{addressresolver::AddressResolver, mutation::Mutation};
+use crate::{
+    addressresolver::AddressResolver,
+    mutation::{Mutation, MutationLocation},
+};
 use parity_wasm::elements::{
     External, FunctionType, ImportEntry, Instruction, Internal, Module, TableElementType, Type,
     ValueType,
@@ -135,27 +138,38 @@ impl<'a> WasmModule<'a> {
     }
 
     /// Apply a mutation
-    fn mutate(&mut self, mutation: &Mutation) {
+    fn mutate(&mut self, mutation_location: &MutationLocation, mutation_index: usize) {
         let instructions = self
             .module
             .code_section_mut()
             .expect("Module does not have a code section") // TODO: Error handling?
             .bodies_mut()
-            .get_mut(mutation.function_number as usize)
+            .get_mut(mutation_location.function_number as usize)
             .expect("unexpected funtion index")
             .code_mut()
             .elements_mut();
 
+        let mutation = mutation_location
+            .mutations
+            .get(mutation_index)
+            .expect("Invalid mutation index");
+
         mutation
             .operator
-            .apply(instructions, mutation.statement_number);
+            .apply(instructions, mutation_location.statement_number);
     }
 
     /// Apply all given mutations
-    fn mutate_all(&mut self, mutations: &[&Mutation]) -> Result<()> {
+    fn mutate_all(&mut self, locations: &[MutationLocation]) -> Result<()> {
         let type_index = self.find_or_insert_check_mutant_function_signature()?;
         let function_index =
             self.add_trace_function_import("__wasmut_check_mutant_id", type_index)?;
+
+        // Increment all function-indices, since the
+        // function section now contains the trace_function at index 0
+        self.fix_call_instructions();
+        self.fix_tables();
+        self.fix_exports();
 
         let bodies = self
             .module
@@ -163,27 +177,31 @@ impl<'a> WasmModule<'a> {
             .context("Module does not have a code section")? // TODO: Error handling?
             .bodies_mut();
 
-        for mutation in mutations {
+        for location in locations {
             let instructions = bodies
-                .get_mut(mutation.function_number as usize)
+                .get_mut(location.function_number as usize)
                 .context("unexpected funtion index")?
                 .code_mut()
                 .elements_mut();
 
-            let sequence = [
-                Instruction::I64Const(mutation.id),
-                Instruction::Call(function_index),
-                Instruction::If(mutation.operator.result_type()),
-                mutation.operator.new_instruction().clone(),
-                Instruction::Else,
-                mutation.operator.old_instruction().clone(),
-                Instruction::End,
-            ];
+            for mutation in &location.mutations {
+                // TODO: Handle multiple mutations properly
 
-            let tail = instructions.split_off(mutation.statement_number as usize);
+                let sequence = [
+                    Instruction::I64Const(mutation.id),
+                    Instruction::Call(function_index),
+                    Instruction::If(mutation.operator.result_type()),
+                    mutation.operator.new_instruction().clone(),
+                    Instruction::Else,
+                    mutation.operator.old_instruction().clone(),
+                    Instruction::End,
+                ];
 
-            instructions.extend_from_slice(&sequence);
-            instructions.extend_from_slice(&tail[1..]);
+                let tail = instructions.split_off(location.statement_number as usize);
+
+                instructions.extend_from_slice(&sequence);
+                instructions.extend_from_slice(&tail[1..]);
+            }
         }
 
         Ok(())
@@ -444,9 +462,16 @@ impl<'a> WasmModule<'a> {
     }
 
     /// Create a clone and apply a mutation
-    pub fn mutated_clone(&self, mutation: &Mutation) -> Self {
+    pub fn clone_and_mutate(&self, location: &MutationLocation, mutation_index: usize) -> Self {
         let mut mutant = self.clone();
-        mutant.mutate(mutation);
+        mutant.mutate(&location, mutation_index);
+        mutant
+    }
+
+    /// Create a clone and apply a mutation
+    pub fn clone_and_mutate_all(&self, locations: &[MutationLocation]) -> Self {
+        let mut mutant = self.clone();
+        mutant.mutate_all(&locations);
         mutant
     }
 

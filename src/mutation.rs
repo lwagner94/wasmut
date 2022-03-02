@@ -13,6 +13,12 @@ pub struct Mutation {
     /// A unique ID for this mutation
     pub id: i64,
 
+    /// The mutation operator that is to be applied
+    pub operator: Box<dyn InstructionReplacement>,
+}
+
+#[derive(Debug)]
+pub struct MutationLocation {
     /// The index in the module's function table
     pub function_number: u64,
 
@@ -23,8 +29,8 @@ pub struct Mutation {
     /// The offset in bytes relative to the start of the code section
     pub offset: u64,
 
-    /// The mutation operator that is to be applied
-    pub operator: Box<dyn InstructionReplacement>,
+    /// All mutations for this location
+    pub mutations: Vec<Mutation>,
 }
 
 /// Used for discovering possible mutants based on
@@ -50,7 +56,10 @@ impl MutationEngine {
     ///
     /// This method will return a vector of `Mutation` structs, representing the
     /// candidates.
-    pub fn discover_mutation_positions(&self, module: &WasmModule) -> Result<Vec<Mutation>> {
+    pub fn discover_mutation_positions(
+        &self,
+        module: &WasmModule,
+    ) -> Result<Vec<MutationLocation>> {
         // Instantiate operator registry
         let registry = OperatorRegistry::new(&self.enabled_operators)?;
 
@@ -65,25 +74,46 @@ impl MutationEngine {
         // The callback is called for every single instruction of the module
         // and is passed the instruction and the location within
         // the module.
-        let callback: CallbackType<Mutation> = &|instruction, location| {
+        let callback: CallbackType<MutationLocation> = &|instruction, location| {
             if self.mutation_policy.check(location.file, location.function) {
-                registry
+                // registry
+                // .mutants_for_instruction(instruction, &context)
+                // .into_iter()
+                // .map(|operator| Mutation {
+                //     id: id_counter.inc() as i64,
+                //     function_number: location.function_index,
+                //     statement_number: location.instruction_index,
+                //     offset: location.instruction_offset,
+                //     operator,
+                // })
+                // .collect()
+
+                let mutations: Vec<Mutation> = registry
                     .mutants_for_instruction(instruction, &context)
                     .into_iter()
                     .map(|operator| Mutation {
                         id: id_counter.inc() as i64,
+                        operator,
+                    })
+                    .collect();
+
+                if mutations.is_empty() {
+                    vec![]
+                } else {
+                    let mutation_location = MutationLocation {
                         function_number: location.function_index,
                         statement_number: location.instruction_index,
                         offset: location.instruction_offset,
-                        operator,
-                    })
-                    .collect()
+                        mutations,
+                    };
+                    vec![mutation_location]
+                }
             } else {
                 vec![]
             }
         };
 
-        let mutations = module.instruction_walker::<Mutation>(callback)?;
+        let mutations = module.instruction_walker::<MutationLocation>(callback)?;
         log::info!("Generated {} mutations", mutations.len());
         Ok(mutations)
     }
@@ -112,8 +142,10 @@ mod tests {
         let config = Config::default();
         let engine = MutationEngine::new(&config)?;
 
-        let positions = engine.discover_mutation_positions(&module).unwrap();
-        let mutant = module.mutated_clone(&positions[0]);
+        let locations = engine.discover_mutation_positions(&module).unwrap();
+        dbg!(&locations);
+
+        let mutant = module.clone_and_mutate(&locations[0], 0);
 
         let mutated_bytecode: Vec<u8> = mutant.to_bytes().unwrap();
         let original_bytecode: Vec<u8> = module.to_bytes().unwrap();

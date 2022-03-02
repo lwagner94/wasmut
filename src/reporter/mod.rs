@@ -15,7 +15,8 @@ use anyhow::{Context, Result};
 
 use crate::{
     addressresolver::{AddressResolver, CodeLocation},
-    mutation::Mutation,
+    executor::ExecutedMutantFromEngine,
+    mutation::{Mutation, MutationLocation},
     operator::InstructionReplacement,
     runtime::ExecutionResult,
     wasmmodule::WasmModule,
@@ -63,24 +64,18 @@ pub struct ExecutedMutant {
 
 pub fn prepare_results(
     module: &WasmModule,
-    mutations: Vec<Mutation>,
-    results: Vec<ExecutionResult>,
+    results: Vec<ExecutedMutantFromEngine>,
 ) -> Result<Vec<ExecutedMutant>> {
     let bytes = std::fs::read(module.path()).context("Could not read bytecode from file")?;
 
     let resolver = AddressResolver::new(&bytes);
 
-    if mutations.len() != results.len() {
-        panic!("Mutation/Execution result length mismatch, this is a bug!");
-    }
-
-    Ok(mutations
+    Ok(results
         .into_iter()
-        .zip(results)
-        .map(|(mutation, result)| ExecutedMutant {
-            location: resolver.lookup_address(mutation.offset).unwrap_or_default(),
-            outcome: result.into(),
-            operator: mutation.operator,
+        .map(|result| ExecutedMutant {
+            location: resolver.lookup_address(result.offset).unwrap_or_default(),
+            outcome: result.outcome,
+            operator: result.operator,
         })
         .collect())
 }
@@ -263,68 +258,38 @@ mod tests {
     #[test]
     fn prepare_results_empty_lists() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        assert_eq!(prepare_results(&module, vec![], vec![]).unwrap().len(), 0);
+        assert_eq!(prepare_results(&module, vec![]).unwrap().len(), 0);
         Ok(())
-    }
-
-    #[test]
-    #[should_panic]
-    fn prepare_results_length_mismatch() {
-        let module = WasmModule::from_file("testdata/simple_add/test.wasm").unwrap();
-        let _ = prepare_results(&module, vec![], vec![ExecutionResult::Timeout]);
     }
 
     #[test]
     fn prepare_results_correct() {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm").unwrap();
 
-        // Not nice, but needed since our operator implemention does not
-        // support clone()
-        let mutation = vec![
-            Mutation {
-                id: 0,
-                function_number: 1,
-                statement_number: 2,
+        let executed_mutants = vec![
+            ExecutedMutantFromEngine {
                 offset: 34,
+                outcome: MutationOutcome::Timeout,
                 operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
-            Mutation {
-                id: 1,
-                function_number: 1,
-                statement_number: 2,
+            ExecutedMutantFromEngine {
                 offset: 34,
+                outcome: MutationOutcome::Alive,
                 operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
-            Mutation {
-                id: 2,
-                function_number: 1,
-                statement_number: 2,
+            ExecutedMutantFromEngine {
                 offset: 34,
+                outcome: MutationOutcome::Killed,
                 operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
-            Mutation {
-                id: 3,
-                function_number: 1,
-                statement_number: 2,
+            ExecutedMutantFromEngine {
                 offset: 34,
+                outcome: MutationOutcome::Error,
                 operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
         ];
 
-        let execution_results = vec![
-            ExecutionResult::Timeout,
-            ExecutionResult::ProcessExit {
-                exit_code: 0,
-                execution_cost: 1,
-            },
-            ExecutionResult::ProcessExit {
-                exit_code: 1,
-                execution_cost: 1,
-            },
-            ExecutionResult::Error,
-        ];
-
-        let results = prepare_results(&module, mutation, execution_results).unwrap();
+        let results = prepare_results(&module, executed_mutants).unwrap();
 
         dbg!(&results);
         assert_eq!(results.len(), 4);

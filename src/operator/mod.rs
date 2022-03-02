@@ -1,6 +1,7 @@
 pub mod ops;
 
 use anyhow::Result;
+use dyn_clone::DynClone;
 use ops::*;
 use parity_wasm::elements::BlockType;
 #[allow(unused_imports)]
@@ -8,7 +9,7 @@ use parity_wasm::elements::Instruction::{self, *};
 
 use crate::wasmmodule::CallRemovalCandidate;
 
-pub trait InstructionReplacement: Send + Sync + std::fmt::Debug {
+pub trait InstructionReplacement: Send + Sync + std::fmt::Debug + DynClone {
     fn old_instruction(&self) -> &Instruction;
     fn new_instruction(&self) -> &Instruction;
 
@@ -29,6 +30,8 @@ pub trait InstructionReplacement: Send + Sync + std::fmt::Debug {
     where
         Self: Sized + Send + Sync + 'static;
 }
+
+dyn_clone::clone_trait_object!(InstructionReplacement);
 
 #[derive(Default)]
 pub struct InstructionContext {

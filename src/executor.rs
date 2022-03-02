@@ -1,12 +1,21 @@
 use indicatif::{ParallelProgressIterator, ProgressBar};
 
-use crate::mutation::Mutation;
+use crate::mutation::{Mutation, MutationLocation};
+use crate::operator::InstructionReplacement;
 use crate::policy::ExecutionPolicy;
+use crate::reporter::{ExecutedMutant, MutationOutcome};
 use crate::runtime::ExecutionResult;
 use crate::{config::Config, runtime, wasmmodule::WasmModule};
 use anyhow::{bail, Result};
 
 use rayon::prelude::*;
+
+#[derive(Debug)]
+pub struct ExecutedMutantFromEngine {
+    pub offset: u64,
+    pub outcome: MutationOutcome,
+    pub operator: Box<dyn InstructionReplacement>,
+}
 
 /// Execution engine for WebAssembly modules
 pub struct Executor<'a> {
@@ -67,8 +76,8 @@ impl<'a> Executor<'a> {
     pub fn execute_mutants(
         &self,
         module: &WasmModule,
-        mutations: &[Mutation],
-    ) -> Result<Vec<ExecutionResult>> {
+        mutations: &[MutationLocation],
+    ) -> Result<Vec<ExecutedMutantFromEngine>> {
         let mut runtime = if self.coverage {
             let mut module = module.clone();
             module.insert_trace_points()?;
@@ -109,37 +118,62 @@ impl<'a> Executor<'a> {
 
         let trace_points = runtime.trace_points();
 
-        let outcomes: Vec<ExecutionResult> = mutations
+        let outcomes: Vec<ExecutedMutantFromEngine> = mutations
             .par_iter()
             .progress_with(pb.clone())
-            .map(|mutation| {
-                if self.coverage && !trace_points.contains(&mutation.offset) {
-                    return ExecutionResult::Skipped;
-                }
+            .flat_map(|location| {
+                // for mutation in location.mutations {
 
-                let module = module.mutated_clone(mutation);
+                // }
+                let offset = location.offset;
 
-                let policy = ExecutionPolicy::RunUntilLimit { limit };
+                location
+                    .mutations
+                    .iter()
+                    .enumerate()
+                    .map(|(cnt, mutation)| {
+                        if self.coverage && !trace_points.contains(&offset) {
+                            return ExecutedMutantFromEngine {
+                                // offset: location.offset,
+                                offset,
+                                outcome: MutationOutcome::Alive, // TODO: Use own outcome variant for skipped?
+                                operator: mutation.operator.clone(),
+                            };
+                        }
 
-                let mut runtime = runtime::create_runtime(&module, true, self.mapped_dirs).unwrap();
-                runtime.call_test_function(policy).unwrap()
+                        let module = module.clone_and_mutate(location, cnt);
+
+                        let policy = ExecutionPolicy::RunUntilLimit { limit };
+
+                        let mut runtime =
+                            runtime::create_runtime(&module, true, self.mapped_dirs).unwrap();
+                        let result = runtime.call_test_function(policy).unwrap();
+
+                        ExecutedMutantFromEngine {
+                            // offset: location.offset,
+                            offset,
+                            outcome: result.into(),
+                            operator: mutation.operator.clone(),
+                        }
+                    })
+                    .collect::<Vec<ExecutedMutantFromEngine>>()
             })
             .collect();
 
         pb.finish_and_clear();
 
-        if self.coverage {
-            let skipped = outcomes.iter().fold(0, |acc, current| match current {
-                ExecutionResult::Skipped => acc + 1,
-                _ => acc,
-            });
+        // if self.coverage {
+        //     let skipped = outcomes.iter().fold(0, |acc, current| match current {
+        //         ExecutionResult::Skipped => acc + 1,
+        //         _ => acc,
+        //     });
 
-            log::info!(
-                "Skipped {}/{} mutant because of missing code coverage",
-                skipped,
-                outcomes.len()
-            );
-        }
+        //     log::info!(
+        //         "Skipped {}/{} mutant because of missing code coverage",
+        //         skipped,
+        //         outcomes.len()
+        //     );
+        // }
 
         Ok(outcomes)
     }
@@ -154,7 +188,10 @@ mod tests {
 
     use super::*;
 
-    fn mutate_module(test_case: &str, mutations: &[Mutation]) -> Result<Vec<ExecutionResult>> {
+    fn mutate_module(
+        test_case: &str,
+        mutations: &[MutationLocation],
+    ) -> Result<Vec<ExecutedMutantFromEngine>> {
         let path = format!("testdata/{test_case}/test.wasm");
         let module = WasmModule::from_file(&path)?;
         let config = Config::parse(
@@ -192,16 +229,23 @@ mod tests {
     fn execute_mutant() -> Result<()> {
         let mutations = vec![Mutation {
             id: 0,
-            function_number: 1,
-            statement_number: 2,
-            offset: 37,
             operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
         }];
 
-        let result = mutate_module("simple_add", &mutations)?;
+        let location = MutationLocation {
+            function_number: 1,
+            statement_number: 2,
+            offset: 37,
+            mutations,
+        };
+
+        let result = mutate_module("simple_add", &[location])?;
         assert!(matches!(
             result[0],
-            ExecutionResult::ProcessExit { exit_code: 1, .. }
+            ExecutedMutantFromEngine {
+                outcome: MutationOutcome::Killed,
+                ..
+            }
         ));
 
         Ok(())
@@ -211,11 +255,15 @@ mod tests {
     fn skip_because_not_covered() -> Result<()> {
         let mutations = vec![Mutation {
             id: 0,
+            operator: Box::new(ConstReplaceNonZero::new(&Instruction::I32Const(-1)).unwrap()),
+        }];
+
+        let location = MutationLocation {
             function_number: 3,
             statement_number: 0,
             offset: 46,
-            operator: Box::new(ConstReplaceNonZero::new(&Instruction::I32Const(-1)).unwrap()),
-        }];
+            mutations,
+        };
 
         let module = WasmModule::from_file("testdata/no_coverage/test.wasm")?;
         let config = Config::parse(
@@ -225,10 +273,15 @@ mod tests {
         "#,
         )?;
         let executor = Executor::new(&config);
-        let result = executor.execute_mutants(&module, &mutations)?;
+        let result = executor.execute_mutants(&module, &[location])?;
 
-        assert!(matches!(result[0], ExecutionResult::Skipped));
-
+        assert!(matches!(
+            result[0],
+            ExecutedMutantFromEngine {
+                outcome: MutationOutcome::Alive,
+                ..
+            }
+        ));
         Ok(())
     }
 }
