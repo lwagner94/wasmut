@@ -30,13 +30,11 @@ fn trace(env: &TraceEnv, address: i64) {
 }
 
 fn check_mutant_id(env: &TraceEnv, mutant_id: i64) -> i32 {
-    // if env.activated_mutant_id == mutant_id {
-    //     1
-    // } else {
-    //     0
-    // }
-
-    1
+    if env.activated_mutant_id == mutant_id {
+        1
+    } else {
+        0
+    }
 }
 
 use super::WasmModule;

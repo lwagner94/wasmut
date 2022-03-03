@@ -8,7 +8,7 @@ use atomic_counter::AtomicCounter;
 use atomic_counter::RelaxedCounter;
 
 /// Definition of a position where and how a module is mutated.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Mutation {
     /// A unique ID for this mutation
     pub id: i64,
@@ -17,7 +17,7 @@ pub struct Mutation {
     pub operator: Box<dyn InstructionReplacement>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MutationLocation {
     /// The index in the module's function table
     pub function_number: u64,
@@ -68,12 +68,13 @@ impl MutationEngine {
         let call_removal_candidates = module.call_removal_candidates()?;
         let context = InstructionContext::new(call_removal_candidates);
 
-        let id_counter = RelaxedCounter::new(0);
+        let id_counter = RelaxedCounter::new(1);
 
         // Define a callback function that is used by wasmmodule::instruction_walker
         // The callback is called for every single instruction of the module
         // and is passed the instruction and the location within
         // the module.
+        // TODO: Refactor so that we do not return a vec?
         let callback: CallbackType<MutationLocation> = &|instruction, location| {
             if self.mutation_policy.check(location.file, location.function) {
                 // registry

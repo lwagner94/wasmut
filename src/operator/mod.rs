@@ -3,9 +3,9 @@ pub mod ops;
 use anyhow::Result;
 use dyn_clone::DynClone;
 use ops::*;
-use parity_wasm::elements::BlockType;
 #[allow(unused_imports)]
 use parity_wasm::elements::Instruction::{self, *};
+use parity_wasm::elements::{BlockType, ValueType};
 
 use crate::wasmmodule::CallRemovalCandidate;
 
@@ -13,13 +13,22 @@ pub trait InstructionReplacement: Send + Sync + std::fmt::Debug + DynClone {
     fn old_instruction(&self) -> &Instruction;
     fn new_instruction(&self) -> &Instruction;
 
-    fn result_type(&self) -> BlockType;
+    fn replacement(&self) -> Vec<Instruction>;
+
+    fn result(&self) -> BlockType;
+
+    fn parameters(&self) -> &[ValueType];
 
     fn description(&self) -> String;
 
     fn apply(&self, instructions: &mut Vec<Instruction>, instr_index: u64) {
         assert_eq!(instructions[instr_index as usize], *self.old_instruction());
-        instructions[instr_index as usize] = self.new_instruction().clone();
+
+        instructions.remove(instr_index as usize);
+
+        for replacement_instr in self.replacement().iter().rev() {
+            instructions.insert(instr_index as usize, replacement_instr.clone());
+        }
     }
 
     fn name() -> &'static str
@@ -188,7 +197,7 @@ mod tests {
                             found = true;
                         }
 
-                        assert_eq!(op.result_type(), $block_type);
+                        assert_eq!(op.result(), $block_type);
                         let description = op.description();
                         assert!(description.len() > 0);
                         assert!(description.contains(stringify!($operator)));
@@ -227,7 +236,7 @@ mod tests {
                     let mut instr = vec![$original];
                     ops[0].apply(&mut instr, 0);
                     assert_eq!(instr[0], $replacement);
-                    assert_eq!(ops[0].result_type(), $block_type);
+                    assert_eq!(ops[0].result(), $block_type);
 
                     let description = ops[0].description();
                     assert!(description.len() > 0);
@@ -948,12 +957,12 @@ mod tests {
         let registry = OperatorRegistry::new(["call_remove_void_call"].as_slice()).unwrap();
         let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningVoid {
             index: 0,
-            params: 2,
+            params: [ValueType::I32, ValueType::I32].into(),
         }]);
 
         let ops = registry.mutants_for_instruction(&Call(0), &context);
         assert_eq!(ops.len(), 1);
-        assert_eq!(ops[0].result_type(), BlockType::NoResult);
+        assert_eq!(ops[0].result(), BlockType::NoResult);
 
         let mut instructions = vec![I32Const(10), I32Const(12), Call(0), I32Const(13), Call(1)];
 
@@ -977,7 +986,7 @@ mod tests {
         let registry = OperatorRegistry::new([].as_slice() as &[&str]).unwrap();
         let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningVoid {
             index: 0,
-            params: 2,
+            params: [ValueType::I32, ValueType::I32].into(),
         }]);
         let ops = registry.mutants_for_instruction(&Call(0), &context);
         assert_eq!(ops.len(), 0);
@@ -993,13 +1002,13 @@ mod tests {
                     let registry = OperatorRegistry::new(["call_remove_scalar_call"].as_slice()).unwrap();
                     let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningScalar {
                         index: 0,
-                        params: 2,
+                        params: [ValueType::I32, ValueType::I32].into(),
                         return_type: Datatype::$datatype,
                     }]);
 
                     let ops = registry.mutants_for_instruction(&Call(0), &context);
                     assert_eq!(ops.len(), 1);
-                    assert_eq!(ops[0].result_type(), BlockType::Value(ValueType::$datatype));
+                    assert_eq!(ops[0].result(), BlockType::Value(ValueType::$datatype));
 
                     let mut instructions = vec![I32Const(10), I32Const(12), Call(0), I32Const(13), Call(1)];
 
@@ -1026,7 +1035,7 @@ mod tests {
                     let registry = OperatorRegistry::new([].as_slice() as &[&str]).unwrap();
                     let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningScalar {
                         index: 0,
-                        params: 2,
+                        params: [ValueType::I32, ValueType::I32].into(),
                         return_type: Datatype::$datatype,
                     }]);
                     let ops = registry.mutants_for_instruction(&Call(0), &context);

@@ -177,6 +177,114 @@ impl<'a> Executor<'a> {
 
         Ok(outcomes)
     }
+
+    pub fn execute_mutants_meta(
+        &self,
+        module: &WasmModule,
+        locations: &[MutationLocation],
+    ) -> Result<Vec<ExecutedMutantFromEngine>> {
+        let mut runtime = if self.coverage {
+            let mut module = module.clone();
+            module.insert_trace_points()?;
+            runtime::create_runtime(&module, true, self.mapped_dirs)?
+        } else {
+            runtime::create_runtime(module, true, self.mapped_dirs)?
+        };
+
+        let mut execution_cost =
+            match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
+                ExecutionResult::ProcessExit {
+                    exit_code,
+                    execution_cost,
+                } => {
+                    if exit_code == 0 {
+                        execution_cost
+                    } else {
+                        bail!("Module without any mutations returned exit code {exit_code}");
+                    }
+                }
+                ExecutionResult::Timeout => {
+                    panic!("Execution limit exceeded even though we set no limit!")
+                }
+                ExecutionResult::Error => bail!("Module failed to execute"),
+                ExecutionResult::Skipped => panic!("Runtime returned ExecutionResult::Skipped"),
+            };
+
+        if self.coverage {
+            // For every instruction, a I32Const and a Call instruction will be inserted
+            execution_cost /= 3;
+        }
+
+        log::info!("Original module executed in {execution_cost} cycles");
+        let limit = (execution_cost as f64 * self.timeout_multiplier).ceil() as u64;
+        log::info!("Setting timeout to {limit} cycles");
+
+        let pb = ProgressBar::new(locations.len() as u64);
+
+        let trace_points = runtime.trace_points();
+
+        let meta_mutant = module.clone_and_mutate_all(locations);
+        let bytes = meta_mutant.to_bytes()?;
+
+        let wat = wabt::wasm2wat(bytes)?;
+
+        std::fs::write("out.wat", wat).unwrap();
+
+        panic!("foo");
+
+        let outcomes: Vec<ExecutedMutantFromEngine> = locations
+            .par_iter()
+            .progress_with(pb.clone())
+            .flat_map(|location| {
+                let offset = location.offset;
+
+                location
+                    .mutations
+                    .iter()
+                    .map(|mutation| {
+                        if self.coverage && !trace_points.contains(&offset) {
+                            return ExecutedMutantFromEngine {
+                                // offset: location.offset,
+                                offset,
+                                outcome: MutationOutcome::Alive, // TODO: Use own outcome variant for skipped?
+                                operator: mutation.operator.clone(),
+                            };
+                        }
+
+                        let policy = ExecutionPolicy::RunUntilLimit { limit };
+
+                        let mut runtime =
+                            runtime::create_runtime(&module, true, self.mapped_dirs).unwrap();
+                        let result = runtime.call_test_function(policy).unwrap();
+
+                        ExecutedMutantFromEngine {
+                            // offset: location.offset,
+                            offset,
+                            outcome: result.into(),
+                            operator: mutation.operator.clone(),
+                        }
+                    })
+                    .collect::<Vec<ExecutedMutantFromEngine>>()
+            })
+            .collect();
+
+        pb.finish_and_clear();
+
+        // if self.coverage {
+        //     let skipped = outcomes.iter().fold(0, |acc, current| match current {
+        //         ExecutionResult::Skipped => acc + 1,
+        //         _ => acc,
+        //     });
+
+        //     log::info!(
+        //         "Skipped {}/{} mutant because of missing code coverage",
+        //         skipped,
+        //         outcomes.len()
+        //     );
+        // }
+
+        Ok(outcomes)
+    }
 }
 
 #[cfg(test)]

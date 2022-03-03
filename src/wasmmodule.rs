@@ -5,8 +5,8 @@ use crate::{
     mutation::{Mutation, MutationLocation},
 };
 use parity_wasm::elements::{
-    External, FunctionType, ImportEntry, Instruction, Internal, Module, TableElementType, Type,
-    ValueType,
+    External, FunctionType, GlobalEntry, GlobalType, ImportEntry, InitExpr, Instruction, Internal,
+    Module, TableElementType, Type, ValueType,
 };
 
 use anyhow::{Context, Result};
@@ -50,12 +50,12 @@ impl From<ValueType> for Datatype {
 #[derive(Debug, PartialEq)]
 pub enum CallRemovalCandidate {
     /// Function does not return anything and has `params` parameters
-    FuncReturningVoid { index: u32, params: usize },
+    FuncReturningVoid { index: u32, params: Vec<ValueType> },
 
     /// Function returns scalar and has `params` parameters
     FuncReturningScalar {
         index: u32,
-        params: usize,
+        params: Vec<ValueType>,
         return_type: Datatype,
     },
 }
@@ -171,11 +171,24 @@ impl<'a> WasmModule<'a> {
         self.fix_tables();
         self.fix_exports();
 
+        if let Some(global_section) = self.module.global_section_mut() {
+            for i in 0..10 {
+                global_section.entries_mut().push(GlobalEntry::new(
+                    GlobalType::new(ValueType::I64, true),
+                    InitExpr::empty(),
+                ));
+            }
+        }
+
         let bodies = self
             .module
             .code_section_mut()
             .context("Module does not have a code section")? // TODO: Error handling?
             .bodies_mut();
+
+        let mut locations = locations.to_vec();
+
+        locations.sort_by(|a, b| b.statement_number.cmp(&a.statement_number));
 
         for location in locations {
             let instructions = bodies
@@ -184,24 +197,12 @@ impl<'a> WasmModule<'a> {
                 .code_mut()
                 .elements_mut();
 
-            for mutation in &location.mutations {
-                // TODO: Handle multiple mutations properly
-
-                let sequence = [
-                    Instruction::I64Const(mutation.id),
-                    Instruction::Call(function_index),
-                    Instruction::If(mutation.operator.result_type()),
-                    mutation.operator.new_instruction().clone(),
-                    Instruction::Else,
-                    mutation.operator.old_instruction().clone(),
-                    Instruction::End,
-                ];
-
-                let tail = instructions.split_off(location.statement_number as usize);
-
-                instructions.extend_from_slice(&sequence);
-                instructions.extend_from_slice(&tail[1..]);
-            }
+            let tail = instructions.split_off(location.statement_number as usize);
+            // Save parameters
+            // let (save_vars, restore_vars) = generate_preamble(globals, &location.mutations);
+            let new_sequence = generate_mutant_sequence(function_index, &location.mutations);
+            instructions.extend_from_slice(&new_sequence);
+            instructions.extend_from_slice(&tail[1..]);
         }
 
         Ok(())
@@ -251,17 +252,15 @@ impl<'a> WasmModule<'a> {
 
             let Type::Function(func_type) = ty;
 
-            let number_of_params = func_type.params().len();
-
             if func_type.results().is_empty() {
                 Some(CallRemovalCandidate::FuncReturningVoid {
                     index,
-                    params: number_of_params,
+                    params: func_type.params().into(),
                 })
             } else if func_type.results().len() == 1 {
                 Some(CallRemovalCandidate::FuncReturningScalar {
                     index,
-                    params: number_of_params,
+                    params: func_type.params().into(),
                     return_type: func_type.results()[0].into(),
                 })
             } else {
@@ -480,10 +479,110 @@ impl<'a> WasmModule<'a> {
     }
 }
 
+fn generate_mutant_sequence(func_index: u32, mutations: &[Mutation]) -> Vec<Instruction> {
+    let mut instructions = Vec::new();
+
+    let mutation = mutations
+        .get(0)
+        .expect("mutation slice is empty, this is bug.");
+
+    instructions.push(Instruction::I64Const(mutation.id));
+    instructions.push(Instruction::Call(func_index));
+    instructions.push(Instruction::If(mutation.operator.result()));
+
+    instructions.append(&mut mutation.operator.replacement());
+    instructions.push(Instruction::Else);
+
+    let next = &mutations[1..];
+    if next.is_empty() {
+        instructions.push(mutations[0].operator.old_instruction().clone());
+    } else {
+        instructions.append(&mut generate_mutant_sequence(func_index, next));
+    }
+
+    instructions.push(Instruction::End);
+
+    instructions
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::operator::ops::{
+        BinaryOperatorAddToSub, BinaryOperatorMulToDivS, BinaryOperatorMulToDivU,
+    };
+
+    #[allow(unused_imports)]
+    use pretty_assertions::{assert_eq, assert_ne};
+
     use super::*;
     use anyhow::Result;
+    use parity_wasm::elements::BlockType;
+
+    #[test]
+    #[should_panic]
+    fn generate_empty_case() {
+        generate_mutant_sequence(1337, &[]);
+    }
+
+    #[test]
+    fn generate_base_case() {
+        let result = generate_mutant_sequence(
+            1337,
+            &[Mutation {
+                id: 1234,
+                operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
+            }],
+        );
+
+        assert_eq!(
+            result,
+            vec![
+                Instruction::I64Const(1234),
+                Instruction::Call(1337),
+                Instruction::If(BlockType::Value(ValueType::I32)),
+                Instruction::I32Sub,
+                Instruction::Else,
+                Instruction::I32Add,
+                Instruction::End
+            ]
+        );
+    }
+
+    #[test]
+    fn generate_recursive_case() {
+        let result = generate_mutant_sequence(
+            1337,
+            &[
+                Mutation {
+                    id: 1234,
+                    operator: Box::new(BinaryOperatorMulToDivS::new(&Instruction::I32Mul).unwrap()),
+                },
+                Mutation {
+                    id: 1235,
+                    operator: Box::new(BinaryOperatorMulToDivU::new(&Instruction::I32Mul).unwrap()),
+                },
+            ],
+        );
+
+        assert_eq!(
+            result,
+            vec![
+                Instruction::I64Const(1234),
+                Instruction::Call(1337),
+                Instruction::If(BlockType::Value(ValueType::I32)),
+                Instruction::I32DivS,
+                Instruction::Else,
+                Instruction::I64Const(1235),
+                Instruction::Call(1337),
+                Instruction::If(BlockType::Value(ValueType::I32)),
+                Instruction::I32DivU,
+                Instruction::Else,
+                Instruction::I32Mul,
+                Instruction::End,
+                Instruction::End
+            ]
+        );
+    }
 
     #[test]
     fn test_load_from_file() {
@@ -527,72 +626,29 @@ mod tests {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
 
         let result = module.call_removal_candidates().unwrap();
+        dbg!(&result);
 
         let expected = vec![
             FuncReturningVoid {
                 index: 0,
-                params: 1,
+                params: [ValueType::I32].into(),
             },
             FuncReturningVoid {
                 index: 1,
-                params: 0,
+                params: [].into(),
             },
             FuncReturningScalar {
                 index: 2,
-                params: 2,
+                params: [ValueType::I32, ValueType::I32].into(),
                 return_type: I32,
             },
             FuncReturningScalar {
                 index: 3,
-                params: 0,
-                return_type: I32,
-            },
-            FuncReturningScalar {
-                index: 4,
-                params: 0,
-                return_type: I32,
-            },
-            FuncReturningScalar {
-                index: 5,
-                params: 0,
-                return_type: I32,
-            },
-            FuncReturningVoid {
-                index: 6,
-                params: 1,
-            },
-            FuncReturningVoid {
-                index: 7,
-                params: 1,
-            },
-            FuncReturningVoid {
-                index: 8,
-                params: 0,
-            },
-            FuncReturningVoid {
-                index: 9,
-                params: 0,
-            },
-            FuncReturningVoid {
-                index: 10,
-                params: 1,
-            },
-            FuncReturningVoid {
-                index: 11,
-                params: 0,
-            },
-            FuncReturningScalar {
-                index: 12,
-                params: 0,
-                return_type: I32,
-            },
-            FuncReturningScalar {
-                index: 13,
-                params: 0,
+                params: [].into(),
                 return_type: I32,
             },
         ];
-        assert_eq!(result, expected);
+        assert_eq!(result[0..4], expected);
         Ok(())
     }
 

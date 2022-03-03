@@ -119,6 +119,36 @@ fn mutate(
     Ok(())
 }
 
+/// Find, apply and execute mutations.
+fn mutate_meta(
+    wasmfile: &str,
+    config: &Config,
+    report_type: &Output,
+    output_directory: &str,
+) -> Result<()> {
+    let module = WasmModule::from_file(wasmfile)?;
+    let mutator = MutationEngine::new(config)?;
+    let mutations = mutator.discover_mutation_positions(&module)?;
+
+    let executor = Executor::new(config);
+    let results = executor.execute_mutants_meta(&module, &mutations)?;
+
+    let executed_mutants = reporter::prepare_results(&module, results)?;
+
+    match report_type {
+        Output::Console => {
+            let reporter = CLIReporter::new(config.report())?;
+            reporter.report(&executed_mutants)?;
+        }
+        Output::Html => {
+            let reporter = HTMLReporter::new(config.report(), Path::new(output_directory))?;
+            reporter.report(&executed_mutants)?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Create a new configuration file.
 ///
 /// If `path` is `None`, a `wasmut.toml` file will be created in the current directory.
