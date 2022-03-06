@@ -1,11 +1,12 @@
 use indicatif::{ParallelProgressIterator, ProgressBar};
 
-use crate::mutation::{Mutation, MutationLocation};
+use crate::mutation::MutationLocation;
 use crate::operator::InstructionReplacement;
 use crate::policy::ExecutionPolicy;
-use crate::reporter::{ExecutedMutant, MutationOutcome};
+use crate::reporter::MutationOutcome;
+use crate::runtime::wasmer::WasmerRuntime;
 use crate::runtime::ExecutionResult;
-use crate::{config::Config, runtime, wasmmodule::WasmModule};
+use crate::{config::Config, wasmmodule::WasmModule};
 use anyhow::{bail, Result};
 
 use rayon::prelude::*;
@@ -46,7 +47,7 @@ impl<'a> Executor<'a> {
     ///
     /// The stdout/stderr output of the module will not be supressed
     pub fn execute(&self, module: &WasmModule) -> Result<()> {
-        let mut runtime = runtime::create_runtime(module, false, self.mapped_dirs)?;
+        let mut runtime = WasmerRuntime::new(module, false, self.mapped_dirs, 0)?;
 
         // TODO: Code duplication?
         match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
@@ -81,9 +82,9 @@ impl<'a> Executor<'a> {
         let mut runtime = if self.coverage {
             let mut module = module.clone();
             module.insert_trace_points()?;
-            runtime::create_runtime(&module, true, self.mapped_dirs)?
+            WasmerRuntime::new(&module, true, self.mapped_dirs, 0)?
         } else {
-            runtime::create_runtime(module, true, self.mapped_dirs)?
+            WasmerRuntime::new(module, true, self.mapped_dirs, 0)?
         };
 
         let mut execution_cost =
@@ -146,7 +147,7 @@ impl<'a> Executor<'a> {
                         let policy = ExecutionPolicy::RunUntilLimit { limit };
 
                         let mut runtime =
-                            runtime::create_runtime(&module, true, self.mapped_dirs).unwrap();
+                            WasmerRuntime::new(&module, true, self.mapped_dirs, 0).unwrap();
                         let result = runtime.call_test_function(policy).unwrap();
 
                         ExecutedMutantFromEngine {
@@ -186,9 +187,9 @@ impl<'a> Executor<'a> {
         let mut runtime = if self.coverage {
             let mut module = module.clone();
             module.insert_trace_points()?;
-            runtime::create_runtime(&module, true, self.mapped_dirs)?
+            WasmerRuntime::new(&module, true, self.mapped_dirs, 0)?
         } else {
-            runtime::create_runtime(module, true, self.mapped_dirs)?
+            WasmerRuntime::new(module, true, self.mapped_dirs, 0)?
         };
 
         let mut execution_cost =
@@ -234,6 +235,9 @@ impl<'a> Executor<'a> {
         std::fs::write("out.wasm", bytes).unwrap();
         std::fs::write("out.wat", wat).unwrap();
 
+        let engine = WasmerRuntime::new(&meta_mutant, true, self.mapped_dirs, 0)?;
+        let cached_module = engine.compiled_code()?;
+
         // panic!("foo");
 
         let outcomes: Vec<ExecutedMutantFromEngine> = locations
@@ -257,8 +261,13 @@ impl<'a> Executor<'a> {
 
                         let policy = ExecutionPolicy::RunUntilLimit { limit };
 
-                        let mut runtime =
-                            runtime::create_runtime(&meta_mutant, true, self.mapped_dirs).unwrap();
+                        let mut runtime = WasmerRuntime::new_from_cached_module(
+                            &cached_module,
+                            true,
+                            self.mapped_dirs,
+                            mutation.id,
+                        )
+                        .unwrap();
                         let result = runtime.call_test_function(policy).unwrap();
 
                         ExecutedMutantFromEngine {
@@ -296,7 +305,10 @@ mod tests {
 
     use parity_wasm::elements::Instruction;
 
-    use crate::operator::ops::{BinaryOperatorAddToSub, ConstReplaceNonZero};
+    use crate::{
+        mutation::Mutation,
+        operator::ops::{BinaryOperatorAddToSub, ConstReplaceNonZero},
+    };
 
     use super::*;
 

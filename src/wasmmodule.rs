@@ -176,7 +176,7 @@ impl<'a> WasmModule<'a> {
             .global_section_mut()
             .expect("module does not have a globals section");
 
-        let parameter_saver = ParameterSaver::new(5, global_section.entries_mut());
+        let parameter_saver = ParameterSaver::new(30, global_section.entries_mut());
 
         let bodies = self
             .module
@@ -209,6 +209,21 @@ impl<'a> WasmModule<'a> {
             let (mut save_sequence, restore_sequence) = parameter_saver.save_sequence(params);
             let new_sequence =
                 generate_mutant_sequence(function_index, &location.mutations, &restore_sequence);
+
+            // TODO: This is needed, because when discovering mutations,
+            // the check_mutant_id function is not inserted yet.
+            // As a result, when we generate call instructions,
+            // the function index is wrong.
+            // Quick fix is to increment all function indices, except
+            // those of calls to the check_mutant_id function
+            let new_sequence: Vec<Instruction> = new_sequence
+                .iter()
+                .map(|i| match i {
+                    Instruction::Call(func) if *func != 0 => Instruction::Call(func + 1),
+                    e => e.clone(),
+                })
+                .collect();
+
             instructions.append(&mut save_sequence);
             instructions.extend_from_slice(&new_sequence);
             instructions.extend_from_slice(&tail[1..]);

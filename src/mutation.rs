@@ -115,6 +115,8 @@ impl MutationEngine {
         };
 
         let mutations = module.instruction_walker::<MutationLocation>(callback)?;
+
+        // TODO: Fix count - we only count MutationLocation, not all Mutations
         log::info!("Generated {} mutations", mutations.len());
         Ok(mutations)
     }

@@ -299,10 +299,13 @@ fn main() {
     let cli = CLIArguments::parse_args();
 
     Builder::new()
-        .filter_level(LevelFilter::Info)
+        .filter_level(LevelFilter::Debug)
         .format_timestamp(None)
-        .format_target(false)
+        // .format_target(false)
         .filter_module("wasmer_wasi", LevelFilter::Warn)
+        .filter_module("regalloc", LevelFilter::Warn)
+        .filter_module("cranelift_codegen", LevelFilter::Warn)
+        .filter_module("wasmer_compiler_cranelift", LevelFilter::Warn)
         .init();
 
     match run_main(cli) {
@@ -364,7 +367,7 @@ mod tests {
             module_path.to_str().unwrap(),
         ]);
         let result = run_main(args);
-        dbg!(&result);
+        // dbg!(&result);
         assert!(result.is_ok());
         assert!(output_dir.path().join("index.html").exists());
     }
