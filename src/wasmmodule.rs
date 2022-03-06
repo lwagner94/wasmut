@@ -171,14 +171,12 @@ impl<'a> WasmModule<'a> {
         self.fix_tables();
         self.fix_exports();
 
-        if let Some(global_section) = self.module.global_section_mut() {
-            for i in 0..10 {
-                global_section.entries_mut().push(GlobalEntry::new(
-                    GlobalType::new(ValueType::I64, true),
-                    InitExpr::empty(),
-                ));
-            }
-        }
+        let global_section = self
+            .module
+            .global_section_mut()
+            .expect("module does not have a globals section");
+
+        let parameter_saver = ParameterSaver::new(5, global_section.entries_mut());
 
         let bodies = self
             .module
@@ -197,10 +195,21 @@ impl<'a> WasmModule<'a> {
                 .code_mut()
                 .elements_mut();
 
+            let params = location
+                .mutations
+                .get(0)
+                .expect("No mutations in location")
+                .operator
+                .parameters();
+
             let tail = instructions.split_off(location.statement_number as usize);
             // Save parameters
             // let (save_vars, restore_vars) = generate_preamble(globals, &location.mutations);
-            let new_sequence = generate_mutant_sequence(function_index, &location.mutations);
+
+            let (mut save_sequence, restore_sequence) = parameter_saver.save_sequence(params);
+            let new_sequence =
+                generate_mutant_sequence(function_index, &location.mutations, &restore_sequence);
+            instructions.append(&mut save_sequence);
             instructions.extend_from_slice(&new_sequence);
             instructions.extend_from_slice(&tail[1..]);
         }
@@ -479,7 +488,11 @@ impl<'a> WasmModule<'a> {
     }
 }
 
-fn generate_mutant_sequence(func_index: u32, mutations: &[Mutation]) -> Vec<Instruction> {
+fn generate_mutant_sequence(
+    func_index: u32,
+    mutations: &[Mutation],
+    restore_sequence: &[Instruction],
+) -> Vec<Instruction> {
     let mut instructions = Vec::new();
 
     let mutation = mutations
@@ -489,20 +502,171 @@ fn generate_mutant_sequence(func_index: u32, mutations: &[Mutation]) -> Vec<Inst
     instructions.push(Instruction::I64Const(mutation.id));
     instructions.push(Instruction::Call(func_index));
     instructions.push(Instruction::If(mutation.operator.result()));
+    instructions.extend_from_slice(restore_sequence);
 
     instructions.append(&mut mutation.operator.replacement());
     instructions.push(Instruction::Else);
 
     let next = &mutations[1..];
     if next.is_empty() {
+        instructions.extend_from_slice(restore_sequence);
         instructions.push(mutations[0].operator.old_instruction().clone());
     } else {
-        instructions.append(&mut generate_mutant_sequence(func_index, next));
+        instructions.append(&mut generate_mutant_sequence(
+            func_index,
+            next,
+            restore_sequence,
+        ));
     }
 
     instructions.push(Instruction::End);
 
     instructions
+}
+
+struct ParameterSaver {
+    offset: usize,
+    number_of_saved_params: usize,
+}
+
+impl ParameterSaver {
+    fn new(number_of_saved_params: usize, globals: &mut Vec<GlobalEntry>) -> Self {
+        let offset = globals.len();
+
+        for _ in 0..number_of_saved_params {
+            globals.push(GlobalEntry::new(
+                GlobalType::new(ValueType::I32, true),
+                InitExpr::new(vec![Instruction::I32Const(0), Instruction::End]),
+            ));
+        }
+
+        for _ in 0..number_of_saved_params {
+            globals.push(GlobalEntry::new(
+                GlobalType::new(ValueType::I64, true),
+                InitExpr::new(vec![Instruction::I64Const(0), Instruction::End]),
+            ));
+        }
+
+        for _ in 0..number_of_saved_params {
+            globals.push(GlobalEntry::new(
+                GlobalType::new(ValueType::F32, true),
+                InitExpr::new(vec![Instruction::F32Const(0), Instruction::End]),
+            ));
+        }
+
+        for _ in 0..number_of_saved_params {
+            globals.push(GlobalEntry::new(
+                GlobalType::new(ValueType::F64, true),
+                InitExpr::new(vec![Instruction::F64Const(0), Instruction::End]),
+            ));
+        }
+
+        Self {
+            offset,
+            number_of_saved_params,
+        }
+    }
+
+    fn save_sequence(&self, params: &[ValueType]) -> (Vec<Instruction>, Vec<Instruction>) {
+        let mut i32_params = 0;
+        let mut i64_params = 0;
+        let mut f32_params = 0;
+        let mut f64_params = 0;
+
+        // // Iterate in reverse order!
+        // let instructions = params.iter().rev().map(|parameter| match parameter {
+        //     ValueType::I32 => {
+        //         let index = self.offset + i32_params;
+        //         i32_params += 1;
+
+        //         Instruction::SetGlobal(index as u32)
+        //     }
+        //     ValueType::I64 => {
+        //         let index = self.offset + self.number_of_saved_params + i64_params;
+        //         i64_params += 1;
+        //         Instruction::SetGlobal(index as u32)
+        //     }
+        //     ValueType::F32 => {
+        //         let index = self.offset + 2 * self.number_of_saved_params + f32_params;
+        //         f32_params += 1;
+        //         Instruction::SetGlobal(index as u32)
+        //     }
+        //     ValueType::F64 => {
+        //         let index = self.offset + 3 * self.number_of_saved_params + f64_params;
+        //         f64_params += 1;
+        //         Instruction::SetGlobal(index as u32)
+        //     }
+        // });
+
+        let mut save_sequence = Vec::new();
+        let mut restore_sequence = Vec::new();
+
+        for parameter in params.iter() {
+            let index = match parameter {
+                ValueType::I32 => {
+                    let index = self.offset + i32_params;
+                    i32_params += 1;
+                    index
+                }
+                ValueType::I64 => {
+                    let index = self.offset + self.number_of_saved_params + i64_params;
+                    i64_params += 1;
+                    index
+                }
+                ValueType::F32 => {
+                    let index = self.offset + 2 * self.number_of_saved_params + f32_params;
+                    f32_params += 1;
+                    index
+                }
+                ValueType::F64 => {
+                    let index = self.offset + 3 * self.number_of_saved_params + f64_params;
+                    f64_params += 1;
+                    index
+                }
+            };
+
+            save_sequence.push(Instruction::SetGlobal(index as u32));
+            restore_sequence.push(Instruction::GetGlobal(index as u32));
+        }
+
+        save_sequence.reverse();
+
+        (save_sequence, restore_sequence)
+    }
+
+    fn restore_sequence(&self, params: &[ValueType]) -> Vec<Instruction> {
+        let mut i32_params = 0;
+        let mut i64_params = 0;
+        let mut f32_params = 0;
+        let mut f64_params = 0;
+
+        // Iterate in normal order!
+        let instructions = params.iter().map(|parameter| match parameter {
+            ValueType::I32 => {
+                let index = self.offset + i32_params;
+                i32_params += 1;
+
+                Instruction::GetGlobal(index as u32)
+            }
+            ValueType::I64 => {
+                let index = self.offset + self.number_of_saved_params + i64_params;
+                i64_params += 1;
+                Instruction::GetGlobal(index as u32)
+            }
+            ValueType::F32 => {
+                let index = self.offset + 2 * self.number_of_saved_params + f32_params;
+                f32_params += 1;
+                Instruction::GetGlobal(index as u32)
+            }
+            ValueType::F64 => {
+                let index = self.offset + 3 * self.number_of_saved_params + f64_params;
+                f64_params += 1;
+                Instruction::GetGlobal(index as u32)
+            }
+        });
+
+        instructions.collect()
+    }
 }
 
 #[cfg(test)]
@@ -519,9 +683,62 @@ mod tests {
     use parity_wasm::elements::BlockType;
 
     #[test]
+    fn parameter_save_restore() {
+        let mut entries = vec![GlobalEntry::new(
+            GlobalType::new(ValueType::I32, true),
+            InitExpr::empty(),
+        )];
+
+        let params = &[
+            ValueType::I32,
+            ValueType::I32,
+            ValueType::I64,
+            ValueType::I64,
+            ValueType::F32,
+            ValueType::F32,
+            ValueType::F64,
+            ValueType::F64,
+        ];
+
+        let saver = ParameterSaver::new(10, &mut entries);
+
+        assert_eq!(entries.len(), 41);
+
+        let (save, restore) = saver.save_sequence(params);
+
+        assert_eq!(
+            save,
+            vec![
+                Instruction::SetGlobal(32),
+                Instruction::SetGlobal(31),
+                Instruction::SetGlobal(22),
+                Instruction::SetGlobal(21),
+                Instruction::SetGlobal(12),
+                Instruction::SetGlobal(11),
+                Instruction::SetGlobal(2),
+                Instruction::SetGlobal(1)
+            ]
+        );
+
+        assert_eq!(
+            restore,
+            vec![
+                Instruction::GetGlobal(1),
+                Instruction::GetGlobal(2),
+                Instruction::GetGlobal(11),
+                Instruction::GetGlobal(12),
+                Instruction::GetGlobal(21),
+                Instruction::GetGlobal(22),
+                Instruction::GetGlobal(31),
+                Instruction::GetGlobal(32),
+            ]
+        );
+    }
+
+    #[test]
     #[should_panic]
     fn generate_empty_case() {
-        generate_mutant_sequence(1337, &[]);
+        generate_mutant_sequence(1337, &[], &[]);
     }
 
     #[test]
@@ -532,6 +749,7 @@ mod tests {
                 id: 1234,
                 operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             }],
+            &[Instruction::GetGlobal(10), Instruction::GetGlobal(11)],
         );
 
         assert_eq!(
@@ -540,8 +758,12 @@ mod tests {
                 Instruction::I64Const(1234),
                 Instruction::Call(1337),
                 Instruction::If(BlockType::Value(ValueType::I32)),
+                Instruction::GetGlobal(10),
+                Instruction::GetGlobal(11),
                 Instruction::I32Sub,
                 Instruction::Else,
+                Instruction::GetGlobal(10),
+                Instruction::GetGlobal(11),
                 Instruction::I32Add,
                 Instruction::End
             ]
@@ -562,6 +784,7 @@ mod tests {
                     operator: Box::new(BinaryOperatorMulToDivU::new(&Instruction::I32Mul).unwrap()),
                 },
             ],
+            &[Instruction::GetGlobal(10), Instruction::GetGlobal(11)],
         );
 
         assert_eq!(
@@ -570,13 +793,19 @@ mod tests {
                 Instruction::I64Const(1234),
                 Instruction::Call(1337),
                 Instruction::If(BlockType::Value(ValueType::I32)),
+                Instruction::GetGlobal(10),
+                Instruction::GetGlobal(11),
                 Instruction::I32DivS,
                 Instruction::Else,
                 Instruction::I64Const(1235),
                 Instruction::Call(1337),
                 Instruction::If(BlockType::Value(ValueType::I32)),
+                Instruction::GetGlobal(10),
+                Instruction::GetGlobal(11),
                 Instruction::I32DivU,
                 Instruction::Else,
+                Instruction::GetGlobal(10),
+                Instruction::GetGlobal(11),
                 Instruction::I32Mul,
                 Instruction::End,
                 Instruction::End

@@ -258,6 +258,18 @@ fn run_main(cli: CLIArguments) -> Result<()> {
             init_rayon(threads);
             mutate(&wasmfile, &config, &report, &output)?;
         }
+        CLICommand::MutateMeta {
+            config,
+            wasmfile,
+            threads,
+            config_samedir,
+            report,
+            output,
+        } => {
+            let config = load_config(config.as_deref(), Some(&wasmfile), config_samedir)?;
+            init_rayon(threads);
+            mutate_meta(&wasmfile, &config, &report, &output)?;
+        }
         CLICommand::NewConfig { path } => {
             new_config(path)?;
         }

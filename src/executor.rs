@@ -219,6 +219,9 @@ impl<'a> Executor<'a> {
         let limit = (execution_cost as f64 * self.timeout_multiplier).ceil() as u64;
         log::info!("Setting timeout to {limit} cycles");
 
+        // TODO
+        let limit = 100 * limit;
+
         let pb = ProgressBar::new(locations.len() as u64);
 
         let trace_points = runtime.trace_points();
@@ -226,11 +229,12 @@ impl<'a> Executor<'a> {
         let meta_mutant = module.clone_and_mutate_all(locations);
         let bytes = meta_mutant.to_bytes()?;
 
-        let wat = wabt::wasm2wat(bytes)?;
+        let wat = wabt::wasm2wat(&bytes)?;
 
+        std::fs::write("out.wasm", bytes).unwrap();
         std::fs::write("out.wat", wat).unwrap();
 
-        panic!("foo");
+        // panic!("foo");
 
         let outcomes: Vec<ExecutedMutantFromEngine> = locations
             .par_iter()
@@ -254,7 +258,7 @@ impl<'a> Executor<'a> {
                         let policy = ExecutionPolicy::RunUntilLimit { limit };
 
                         let mut runtime =
-                            runtime::create_runtime(&module, true, self.mapped_dirs).unwrap();
+                            runtime::create_runtime(&meta_mutant, true, self.mapped_dirs).unwrap();
                         let result = runtime.call_test_function(policy).unwrap();
 
                         ExecutedMutantFromEngine {
