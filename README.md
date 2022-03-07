@@ -329,7 +329,17 @@ for any hints on what compiler options to use.
     Defaults to `true`.
 
     ```toml
-    coverage_based_execution = false
+    coverage_based_execution = true
+    ```
+
+  - `meta_mutant`:
+    If `meta_mutant` is enabled, a single mutant containing all mutations will be generated.
+    During execution, mutations are activated by setting a flag. The benefit
+    of this is that only a single mutant needs to be compiled by the WebAssembly runtime,
+    and thus the execution time is reduced significantly.
+    Defaults to `true`.
+    ```toml
+    meta_mutant = true
     ```
 
 
@@ -377,6 +387,7 @@ for any hints on what compiler options to use.
 timeout_multiplier = 4.0
 map_dirs = [["testdata/count_words/files", "files"],]
 coverage_based_execution = true
+meta_mutant = true
 
 [filter]
 allowed_functions = ["^count_words"]

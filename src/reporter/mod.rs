@@ -16,7 +16,6 @@ use anyhow::{Context, Result};
 use crate::{
     addressresolver::{AddressResolver, CodeLocation},
     executor::ExecutedMutantFromEngine,
-    mutation::{Mutation, MutationLocation},
     operator::InstructionReplacement,
     runtime::ExecutionResult,
     wasmmodule::WasmModule,

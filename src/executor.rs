@@ -4,7 +4,7 @@ use crate::mutation::MutationLocation;
 use crate::operator::InstructionReplacement;
 use crate::policy::ExecutionPolicy;
 use crate::reporter::MutationOutcome;
-use crate::runtime::wasmer::WasmerRuntime;
+use crate::runtime::wasmer::{WasmerRuntime, WasmerRuntimeFactory};
 use crate::runtime::ExecutionResult;
 use crate::{config::Config, wasmmodule::WasmModule};
 use anyhow::{bail, Result};
@@ -31,6 +31,10 @@ pub struct Executor<'a> {
     /// If set to true, mutants that have no chance of being ever executed
     /// will be skipped.
     coverage: bool,
+
+    /// If true, only a single mutant containing all possible mutations
+    /// will be generated, reducing compilation time.
+    meta_mutant: bool,
 }
 
 impl<'a> Executor<'a> {
@@ -40,6 +44,7 @@ impl<'a> Executor<'a> {
             timeout_multiplier: config.engine().timeout_multiplier(),
             mapped_dirs: config.engine().map_dirs(),
             coverage: config.engine().coverage_based_execution(),
+            meta_mutant: config.engine().meta_mutant(),
         }
     }
 
@@ -47,7 +52,7 @@ impl<'a> Executor<'a> {
     ///
     /// The stdout/stderr output of the module will not be supressed
     pub fn execute(&self, module: &WasmModule) -> Result<()> {
-        let mut runtime = WasmerRuntime::new(module, false, self.mapped_dirs, 0)?;
+        let mut runtime = WasmerRuntime::new(module, false, self.mapped_dirs)?;
 
         // TODO: Code duplication?
         match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
@@ -71,20 +76,32 @@ impl<'a> Executor<'a> {
         Ok(())
     }
 
-    /// Execute mutants and gather results
-    ///
-    /// During execution, stdout and stderr are supressed
     pub fn execute_mutants(
         &self,
         module: &WasmModule,
-        mutations: &[MutationLocation],
+        locations: &[MutationLocation],
+    ) -> Result<Vec<ExecutedMutantFromEngine>> {
+        if self.meta_mutant {
+            self.execute_mutants_meta(module, locations)
+        } else {
+            self.execute_mutants_one_by_one(module, locations)
+        }
+    }
+
+    /// Execute mutants and gather results
+    ///
+    /// During execution, stdout and stderr are supressed
+    fn execute_mutants_one_by_one(
+        &self,
+        module: &WasmModule,
+        locations: &[MutationLocation],
     ) -> Result<Vec<ExecutedMutantFromEngine>> {
         let mut runtime = if self.coverage {
             let mut module = module.clone();
             module.insert_trace_points()?;
-            WasmerRuntime::new(&module, true, self.mapped_dirs, 0)?
+            WasmerRuntime::new(&module, true, self.mapped_dirs)?
         } else {
-            WasmerRuntime::new(module, true, self.mapped_dirs, 0)?
+            WasmerRuntime::new(module, true, self.mapped_dirs)?
         };
 
         let mut execution_cost =
@@ -115,11 +132,11 @@ impl<'a> Executor<'a> {
         let limit = (execution_cost as f64 * self.timeout_multiplier).ceil() as u64;
         log::info!("Setting timeout to {limit} cycles");
 
-        let pb = ProgressBar::new(mutations.len() as u64);
+        let pb = ProgressBar::new(locations.len() as u64);
 
         let trace_points = runtime.trace_points();
 
-        let outcomes: Vec<ExecutedMutantFromEngine> = mutations
+        let outcomes: Vec<ExecutedMutantFromEngine> = locations
             .par_iter()
             .progress_with(pb.clone())
             .flat_map(|location| {
@@ -147,7 +164,7 @@ impl<'a> Executor<'a> {
                         let policy = ExecutionPolicy::RunUntilLimit { limit };
 
                         let mut runtime =
-                            WasmerRuntime::new(&module, true, self.mapped_dirs, 0).unwrap();
+                            WasmerRuntime::new(&module, true, self.mapped_dirs).unwrap();
                         let result = runtime.call_test_function(policy).unwrap();
 
                         ExecutedMutantFromEngine {
@@ -163,23 +180,10 @@ impl<'a> Executor<'a> {
 
         pb.finish_and_clear();
 
-        // if self.coverage {
-        //     let skipped = outcomes.iter().fold(0, |acc, current| match current {
-        //         ExecutionResult::Skipped => acc + 1,
-        //         _ => acc,
-        //     });
-
-        //     log::info!(
-        //         "Skipped {}/{} mutant because of missing code coverage",
-        //         skipped,
-        //         outcomes.len()
-        //     );
-        // }
-
         Ok(outcomes)
     }
 
-    pub fn execute_mutants_meta(
+    fn execute_mutants_meta(
         &self,
         module: &WasmModule,
         locations: &[MutationLocation],
@@ -187,9 +191,9 @@ impl<'a> Executor<'a> {
         let mut runtime = if self.coverage {
             let mut module = module.clone();
             module.insert_trace_points()?;
-            WasmerRuntime::new(&module, true, self.mapped_dirs, 0)?
+            WasmerRuntime::new(&module, true, self.mapped_dirs)?
         } else {
-            WasmerRuntime::new(module, true, self.mapped_dirs, 0)?
+            WasmerRuntime::new(module, true, self.mapped_dirs)?
         };
 
         let mut execution_cost =
@@ -227,18 +231,9 @@ impl<'a> Executor<'a> {
 
         let trace_points = runtime.trace_points();
 
-        let meta_mutant = module.clone_and_mutate_all(locations);
-        let bytes = meta_mutant.to_bytes()?;
+        let meta_mutant = module.clone_and_mutate_all(locations)?;
 
-        let wat = wabt::wasm2wat(&bytes)?;
-
-        std::fs::write("out.wasm", bytes).unwrap();
-        std::fs::write("out.wat", wat).unwrap();
-
-        let engine = WasmerRuntime::new(&meta_mutant, true, self.mapped_dirs, 0)?;
-        let cached_module = engine.compiled_code()?;
-
-        // panic!("foo");
+        let factory = WasmerRuntimeFactory::new(&meta_mutant, true, self.mapped_dirs)?;
 
         let outcomes: Vec<ExecutedMutantFromEngine> = locations
             .par_iter()
@@ -260,14 +255,7 @@ impl<'a> Executor<'a> {
                         }
 
                         let policy = ExecutionPolicy::RunUntilLimit { limit };
-
-                        let mut runtime = WasmerRuntime::new_from_cached_module(
-                            &cached_module,
-                            true,
-                            self.mapped_dirs,
-                            mutation.id,
-                        )
-                        .unwrap();
+                        let mut runtime = factory.instantiate_mutant(mutation.id).unwrap();
                         let result = runtime.call_test_function(policy).unwrap();
 
                         ExecutedMutantFromEngine {
@@ -282,19 +270,6 @@ impl<'a> Executor<'a> {
             .collect();
 
         pb.finish_and_clear();
-
-        // if self.coverage {
-        //     let skipped = outcomes.iter().fold(0, |acc, current| match current {
-        //         ExecutionResult::Skipped => acc + 1,
-        //         _ => acc,
-        //     });
-
-        //     log::info!(
-        //         "Skipped {}/{} mutant because of missing code coverage",
-        //         skipped,
-        //         outcomes.len()
-        //     );
-        // }
 
         Ok(outcomes)
     }

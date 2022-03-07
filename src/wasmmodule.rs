@@ -487,15 +487,15 @@ impl<'a> WasmModule<'a> {
     /// Create a clone and apply a mutation
     pub fn clone_and_mutate(&self, location: &MutationLocation, mutation_index: usize) -> Self {
         let mut mutant = self.clone();
-        mutant.mutate(&location, mutation_index);
+        mutant.mutate(location, mutation_index);
         mutant
     }
 
     /// Create a clone and apply a mutation
-    pub fn clone_and_mutate_all(&self, locations: &[MutationLocation]) -> Self {
+    pub fn clone_and_mutate_all(&self, locations: &[MutationLocation]) -> Result<Self> {
         let mut mutant = self.clone();
-        mutant.mutate_all(&locations);
-        mutant
+        mutant.mutate_all(locations)?;
+        Ok(mutant)
     }
 
     pub fn path(&self) -> &str {

@@ -48,7 +48,6 @@ use super::WasmModule;
 pub struct WasmerRuntime {
     instance: wasmer::Instance,
     trace_env: TraceEnv,
-    module: Module,
 }
 
 impl WasmerRuntime {
@@ -56,32 +55,24 @@ impl WasmerRuntime {
         module: &WasmModule,
         discard_output: bool,
         map_dirs: &[(String, String)],
-        mutant_id: i64,
     ) -> Result<Self> {
         let store = create_store();
-        let trace_env = TraceEnv::new(mutant_id);
+        let trace_env = TraceEnv::new(0);
 
         let wasmer_module = create_module(module, &store)?;
         let mut import_object =
             create_wasi_import_object(discard_output, map_dirs, &wasmer_module)?;
         add_trace_function(&store, &mut import_object, &trace_env);
 
-        // let trace_env = if coverage {
-        //     Some()
-        // } else {
-        //     None
-        // };
-
         Ok(WasmerRuntime {
             instance: Instance::new(&wasmer_module, &import_object)
                 .context("Failed to create wasmer instance")?,
             trace_env,
-            module: wasmer_module,
         })
     }
 
-    pub fn new_from_cached_module(
-        cached_module: &CachedModule,
+    fn new_from_cached_module(
+        compiled_code: &[u8],
         discard_output: bool,
         map_dirs: &[(String, String)],
         mutant_id: i64,
@@ -89,24 +80,16 @@ impl WasmerRuntime {
         let store = create_store();
         let trace_env = TraceEnv::new(mutant_id);
 
-        // let wasmer_module = create_module(module, &store)?;
-        let wasmer_module = unsafe { Module::deserialize(&store, &cached_module.0)? };
+        let wasmer_module = unsafe { Module::deserialize(&store, compiled_code)? };
 
         let mut import_object =
             create_wasi_import_object(discard_output, map_dirs, &wasmer_module)?;
         add_trace_function(&store, &mut import_object, &trace_env);
 
-        // let trace_env = if coverage {
-        //     Some()
-        // } else {
-        //     None
-        // };
-
         Ok(WasmerRuntime {
             instance: Instance::new(&wasmer_module, &import_object)
                 .context("Failed to create wasmer instance")?,
             trace_env,
-            module: wasmer_module,
         })
     }
 
@@ -171,16 +154,40 @@ impl WasmerRuntime {
         let points = self.trace_env.points.as_ref().lock().unwrap();
         points.clone()
     }
-
-    pub fn compiled_code(&self) -> Result<CachedModule> {
-        let compiled_code = self.module.serialize()?;
-        log::debug!("Size of cached code: {} bytes", compiled_code.len());
-
-        Ok(CachedModule(compiled_code))
-    }
 }
 
-pub struct CachedModule(Vec<u8>);
+pub struct WasmerRuntimeFactory<'a> {
+    compiled_code: Vec<u8>,
+    discard_output: bool,
+    map_dirs: &'a [(String, String)],
+}
+
+impl<'a> WasmerRuntimeFactory<'a> {
+    pub fn new(
+        module: &WasmModule,
+        discard_output: bool,
+        map_dirs: &'a [(String, String)],
+    ) -> Result<Self> {
+        let store = create_store();
+        let wasmer_module = create_module(module, &store)?;
+        let compiled_code = wasmer_module.serialize()?;
+
+        Ok(Self {
+            compiled_code,
+            discard_output,
+            map_dirs,
+        })
+    }
+
+    pub fn instantiate_mutant(&self, mutant_id: i64) -> Result<WasmerRuntime> {
+        WasmerRuntime::new_from_cached_module(
+            &self.compiled_code,
+            self.discard_output,
+            self.map_dirs,
+            mutant_id,
+        )
+    }
+}
 
 fn add_trace_function(store: &Store, import_object: &mut ImportObject, trace_env: &TraceEnv) {
     let mut exports = Exports::new();
@@ -212,7 +219,7 @@ fn create_store() -> Store {
     Store::new(&Universal::new(compiler_config).engine())
 }
 
-fn create_module(module: &WasmModule, store: &Store) -> Result<Module, anyhow::Error> {
+fn create_module(module: &WasmModule, store: &Store) -> Result<Module> {
     let bytecode: Vec<u8> = module.to_bytes()?;
     let module = Module::new(store, &bytecode).context("Failed to create wasmer module")?;
 
@@ -259,7 +266,7 @@ mod tests {
     #[test]
     fn test_run_entry_point() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        let mut runtime = WasmerRuntime::new(&module, true, &[], 0)?;
+        let mut runtime = WasmerRuntime::new(&module, true, &[])?;
 
         let result = runtime.call_test_function(ExecutionPolicy::RunUntilReturn)?;
 
@@ -281,7 +288,7 @@ mod tests {
     #[test]
     fn test_execution_limit() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
-        let mut runtime = WasmerRuntime::new(&module, true, &[], 0)?;
+        let mut runtime = WasmerRuntime::new(&module, true, &[])?;
 
         let result = runtime.call_test_function(ExecutionPolicy::RunUntilLimit { limit: 1 })?;
 

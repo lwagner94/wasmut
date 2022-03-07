@@ -119,36 +119,6 @@ fn mutate(
     Ok(())
 }
 
-/// Find, apply and execute mutations.
-fn mutate_meta(
-    wasmfile: &str,
-    config: &Config,
-    report_type: &Output,
-    output_directory: &str,
-) -> Result<()> {
-    let module = WasmModule::from_file(wasmfile)?;
-    let mutator = MutationEngine::new(config)?;
-    let mutations = mutator.discover_mutation_positions(&module)?;
-
-    let executor = Executor::new(config);
-    let results = executor.execute_mutants_meta(&module, &mutations)?;
-
-    let executed_mutants = reporter::prepare_results(&module, results)?;
-
-    match report_type {
-        Output::Console => {
-            let reporter = CLIReporter::new(config.report())?;
-            reporter.report(&executed_mutants)?;
-        }
-        Output::Html => {
-            let reporter = HTMLReporter::new(config.report(), Path::new(output_directory))?;
-            reporter.report(&executed_mutants)?;
-        }
-    }
-
-    Ok(())
-}
-
 /// Create a new configuration file.
 ///
 /// If `path` is `None`, a `wasmut.toml` file will be created in the current directory.
@@ -258,18 +228,6 @@ fn run_main(cli: CLIArguments) -> Result<()> {
             init_rayon(threads);
             mutate(&wasmfile, &config, &report, &output)?;
         }
-        CLICommand::MutateMeta {
-            config,
-            wasmfile,
-            threads,
-            config_samedir,
-            report,
-            output,
-        } => {
-            let config = load_config(config.as_deref(), Some(&wasmfile), config_samedir)?;
-            init_rayon(threads);
-            mutate_meta(&wasmfile, &config, &report, &output)?;
-        }
         CLICommand::NewConfig { path } => {
             new_config(path)?;
         }
@@ -299,7 +257,7 @@ fn main() {
     let cli = CLIArguments::parse_args();
 
     Builder::new()
-        .filter_level(LevelFilter::Debug)
+        .filter_level(LevelFilter::Info)
         .format_timestamp(None)
         // .format_target(false)
         .filter_module("wasmer_wasi", LevelFilter::Warn)
