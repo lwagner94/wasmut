@@ -1,7 +1,7 @@
 use colored::*;
 
 use super::{
-    rewriter::PathRewriter, ExecutedMutant, MutationOutcome, Reporter, SyntectContext,
+    rewriter::PathRewriter, MutationOutcome, ReportableMutant, Reporter, SyntectContext,
     SyntectFileContext,
 };
 use crate::config::ReportConfig;
@@ -41,7 +41,7 @@ impl CLIReporter {
         })
     }
 
-    fn summary(&self, executed_mutants: &[ExecutedMutant]) {
+    fn summary(&self, executed_mutants: &[ReportableMutant]) {
         let acc = super::accumulate_outcomes(executed_mutants);
 
         let alive_str: ColoredString = MutationOutcome::Alive.into();
@@ -60,7 +60,7 @@ impl CLIReporter {
         ));
     }
 
-    fn enumerate_mutants(&self, executed_mutants: &[ExecutedMutant]) -> Result<()> {
+    fn enumerate_mutants(&self, executed_mutants: &[ReportableMutant]) -> Result<()> {
         // Get a map filename -> (LineNumberMutantMap)
         let file_map: super::FileMutantMap =
             super::map_mutants_to_files(executed_mutants, self.path_rewriter.as_ref());
@@ -83,7 +83,12 @@ impl CLIReporter {
         Ok(())
     }
 
-    fn print_mutant(&self, file: &str, mutant: &ExecutedMutant, highlighter: &SyntectFileContext) {
+    fn print_mutant(
+        &self,
+        file: &str,
+        mutant: &ReportableMutant,
+        highlighter: &SyntectFileContext,
+    ) {
         let mut file_line_col = String::new();
 
         let mut line_in_file = String::new();
@@ -141,7 +146,7 @@ impl CLIReporter {
 }
 
 impl Reporter for CLIReporter {
-    fn report(&self, executed_mutants: &[ExecutedMutant]) -> Result<()> {
+    fn report(&self, executed_mutants: &[ReportableMutant]) -> Result<()> {
         self.enumerate_mutants(executed_mutants)?;
         self.summary(executed_mutants);
         Ok(())
@@ -170,7 +175,7 @@ mod tests {
         assert!(line.is_err());
     }
 
-    fn report_to_string(executed_mutants: Vec<ExecutedMutant>) -> String {
+    fn report_to_string(executed_mutants: Vec<ReportableMutant>) -> String {
         let config = Config::parse(
             r#"
             [report]
@@ -188,7 +193,7 @@ mod tests {
 
     #[test]
     fn cli_reporter_single_mutant() {
-        let executed_mutants = vec![ExecutedMutant {
+        let executed_mutants = vec![ReportableMutant {
             location: CodeLocation {
                 file: Some("/home/user/Repos/wasmut/testdata/simple_add/simple_add.c".into()),
                 function: Some("add".into()),
@@ -209,7 +214,7 @@ mod tests {
     #[test]
     fn cli_reporter_summary() {
         let executed_mutants = vec![
-            ExecutedMutant {
+            ReportableMutant {
                 location: CodeLocation {
                     file: Some("/home/user/Repos/wasmut/testdata/simple_add/simple_add.c".into()),
                     function: Some("add".into()),
@@ -219,7 +224,7 @@ mod tests {
                 outcome: MutationOutcome::Alive,
                 operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
-            ExecutedMutant {
+            ReportableMutant {
                 location: CodeLocation {
                     file: Some("/home/user/Repos/wasmut/testdata/simple_add/simple_add.c".into()),
                     function: Some("add".into()),
@@ -229,7 +234,7 @@ mod tests {
                 outcome: MutationOutcome::Killed,
                 operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
-            ExecutedMutant {
+            ReportableMutant {
                 location: CodeLocation {
                     file: Some("/home/user/Repos/wasmut/testdata/simple_add/simple_add.c".into()),
                     function: Some("add".into()),
@@ -239,7 +244,7 @@ mod tests {
                 outcome: MutationOutcome::Timeout,
                 operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
-            ExecutedMutant {
+            ReportableMutant {
                 location: CodeLocation {
                     file: Some("/home/user/Repos/wasmut/testdata/simple_add/simple_add.c".into()),
                     function: Some("add".into()),

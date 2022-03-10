@@ -100,6 +100,8 @@ fn mutate(
     let mutator = MutationEngine::new(config)?;
     let mutations = mutator.discover_mutation_positions(&module)?;
 
+    dbg!(&mutations);
+
     let executor = Executor::new(config);
     let results = executor.execute_mutants(&module, &mutations)?;
 

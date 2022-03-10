@@ -1,7 +1,4 @@
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use crate::{policy::ExecutionPolicy, runtime::ExecutionResult};
 use anyhow::{Context, Result};
@@ -16,12 +13,12 @@ use wasmer_middlewares::{
 use wasmer_wasi::{Pipe, WasiError, WasiState};
 
 #[derive(WasmerEnv, Clone, Default)]
-struct TraceEnv {
-    points: Arc<Mutex<HashSet<u64>>>,
+struct MutantEnv {
+    points: Arc<Mutex<TracePoints>>,
     activated_mutant_id: i64,
 }
 
-impl TraceEnv {
+impl MutantEnv {
     fn new(activated_mutant_id: i64) -> Self {
         Self {
             points: Default::default(),
@@ -30,12 +27,12 @@ impl TraceEnv {
     }
 }
 
-fn trace(env: &TraceEnv, address: i64) {
+fn trace(env: &MutantEnv, address: i64) {
     let mut vec = env.points.lock().unwrap();
-    vec.insert(address as u64);
+    vec.add_point(address as u64);
 }
 
-fn check_mutant_id(env: &TraceEnv, mutant_id: i64) -> i32 {
+fn check_mutant_id(env: &MutantEnv, mutant_id: i64) -> i32 {
     if env.activated_mutant_id == mutant_id {
         1
     } else {
@@ -43,11 +40,11 @@ fn check_mutant_id(env: &TraceEnv, mutant_id: i64) -> i32 {
     }
 }
 
-use super::WasmModule;
+use super::{TracePoints, WasmModule};
 
 pub struct WasmerRuntime {
     instance: wasmer::Instance,
-    trace_env: TraceEnv,
+    mutant_env: MutantEnv,
 }
 
 impl WasmerRuntime {
@@ -57,7 +54,7 @@ impl WasmerRuntime {
         map_dirs: &[(String, String)],
     ) -> Result<Self> {
         let store = create_store();
-        let trace_env = TraceEnv::new(0);
+        let trace_env = MutantEnv::new(0);
 
         let wasmer_module = create_module(module, &store)?;
         let mut import_object =
@@ -67,7 +64,7 @@ impl WasmerRuntime {
         Ok(WasmerRuntime {
             instance: Instance::new(&wasmer_module, &import_object)
                 .context("Failed to create wasmer instance")?,
-            trace_env,
+            mutant_env: trace_env,
         })
     }
 
@@ -78,18 +75,18 @@ impl WasmerRuntime {
         mutant_id: i64,
     ) -> Result<Self> {
         let store = create_store();
-        let trace_env = TraceEnv::new(mutant_id);
+        let mutant_env = MutantEnv::new(mutant_id);
 
         let wasmer_module = unsafe { Module::deserialize(&store, compiled_code)? };
 
         let mut import_object =
             create_wasi_import_object(discard_output, map_dirs, &wasmer_module)?;
-        add_trace_function(&store, &mut import_object, &trace_env);
+        add_trace_function(&store, &mut import_object, &mutant_env);
 
         Ok(WasmerRuntime {
             instance: Instance::new(&wasmer_module, &import_object)
                 .context("Failed to create wasmer instance")?,
-            trace_env,
+            mutant_env,
         })
     }
 
@@ -150,8 +147,8 @@ impl WasmerRuntime {
         }
     }
 
-    pub fn trace_points(&self) -> HashSet<u64> {
-        let points = self.trace_env.points.as_ref().lock().unwrap();
+    pub fn trace_points(&self) -> TracePoints {
+        let points = self.mutant_env.points.as_ref().lock().unwrap();
         points.clone()
     }
 }
@@ -189,7 +186,7 @@ impl<'a> WasmerRuntimeFactory<'a> {
     }
 }
 
-fn add_trace_function(store: &Store, import_object: &mut ImportObject, trace_env: &TraceEnv) {
+fn add_trace_function(store: &Store, import_object: &mut ImportObject, trace_env: &MutantEnv) {
     let mut exports = Exports::new();
 
     exports.insert(

@@ -5,8 +5,8 @@ use crate::{
     mutation::{Mutation, MutationLocation},
 };
 use parity_wasm::elements::{
-    External, FunctionType, GlobalEntry, GlobalType, ImportEntry, InitExpr, Instruction, Internal,
-    Module, TableElementType, Type, ValueType,
+    External, FunctionType, GlobalEntry, GlobalSection, GlobalType, ImportEntry, InitExpr,
+    Instruction, Internal, Module, Section, TableElementType, Type, ValueType,
 };
 
 use anyhow::{Context, Result};
@@ -171,11 +171,9 @@ impl<'a> WasmModule<'a> {
         self.fix_tables();
         self.fix_exports();
 
-        let global_section = self
-            .module
-            .global_section_mut()
-            .expect("module does not have a globals section");
+        let global_section = self.get_or_create_global_section();
 
+        // TODO: Make number_of_saved_params adaptive
         let parameter_saver = ParameterSaver::new(30, global_section.entries_mut());
 
         let bodies = self
@@ -230,6 +228,16 @@ impl<'a> WasmModule<'a> {
         }
 
         Ok(())
+    }
+
+    /// Get reference to global section, or create it if it does not exist.
+    fn get_or_create_global_section(&mut self) -> &mut parity_wasm::elements::GlobalSection {
+        if self.module.global_section_mut().is_none() {
+            let sections = self.module.sections_mut();
+            sections.push(Section::Global(GlobalSection::default()));
+        }
+
+        self.module.global_section_mut().unwrap()
     }
 
     /// Return a set of all function names in the module
@@ -588,31 +596,6 @@ impl ParameterSaver {
         let mut f32_params = 0;
         let mut f64_params = 0;
 
-        // // Iterate in reverse order!
-        // let instructions = params.iter().rev().map(|parameter| match parameter {
-        //     ValueType::I32 => {
-        //         let index = self.offset + i32_params;
-        //         i32_params += 1;
-
-        //         Instruction::SetGlobal(index as u32)
-        //     }
-        //     ValueType::I64 => {
-        //         let index = self.offset + self.number_of_saved_params + i64_params;
-        //         i64_params += 1;
-        //         Instruction::SetGlobal(index as u32)
-        //     }
-        //     ValueType::F32 => {
-        //         let index = self.offset + 2 * self.number_of_saved_params + f32_params;
-        //         f32_params += 1;
-        //         Instruction::SetGlobal(index as u32)
-        //     }
-        //     ValueType::F64 => {
-        //         let index = self.offset + 3 * self.number_of_saved_params + f64_params;
-        //         f64_params += 1;
-        //         Instruction::SetGlobal(index as u32)
-        //     }
-        // });
-
         let mut save_sequence = Vec::new();
         let mut restore_sequence = Vec::new();
 
@@ -647,40 +630,6 @@ impl ParameterSaver {
         save_sequence.reverse();
 
         (save_sequence, restore_sequence)
-    }
-
-    fn restore_sequence(&self, params: &[ValueType]) -> Vec<Instruction> {
-        let mut i32_params = 0;
-        let mut i64_params = 0;
-        let mut f32_params = 0;
-        let mut f64_params = 0;
-
-        // Iterate in normal order!
-        let instructions = params.iter().map(|parameter| match parameter {
-            ValueType::I32 => {
-                let index = self.offset + i32_params;
-                i32_params += 1;
-
-                Instruction::GetGlobal(index as u32)
-            }
-            ValueType::I64 => {
-                let index = self.offset + self.number_of_saved_params + i64_params;
-                i64_params += 1;
-                Instruction::GetGlobal(index as u32)
-            }
-            ValueType::F32 => {
-                let index = self.offset + 2 * self.number_of_saved_params + f32_params;
-                f32_params += 1;
-                Instruction::GetGlobal(index as u32)
-            }
-            ValueType::F64 => {
-                let index = self.offset + 3 * self.number_of_saved_params + f64_params;
-                f64_params += 1;
-                Instruction::GetGlobal(index as u32)
-            }
-        });
-
-        instructions.collect()
     }
 }
 

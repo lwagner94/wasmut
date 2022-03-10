@@ -15,7 +15,7 @@ use anyhow::{Context, Result};
 
 use crate::{
     addressresolver::{AddressResolver, CodeLocation},
-    executor::ExecutedMutantFromEngine,
+    executor::ExecutedMutant,
     operator::InstructionReplacement,
     runtime::ExecutionResult,
     wasmmodule::WasmModule,
@@ -55,7 +55,7 @@ impl From<ExecutionResult> for MutationOutcome {
 }
 
 #[derive(Debug)]
-pub struct ExecutedMutant {
+pub struct ReportableMutant {
     location: CodeLocation,
     outcome: MutationOutcome,
     operator: Box<dyn InstructionReplacement>,
@@ -63,31 +63,31 @@ pub struct ExecutedMutant {
 
 pub fn prepare_results(
     module: &WasmModule,
-    results: Vec<ExecutedMutantFromEngine>,
-) -> Result<Vec<ExecutedMutant>> {
+    results: Vec<ExecutedMutant>,
+) -> Result<Vec<ReportableMutant>> {
     let bytes = std::fs::read(module.path()).context("Could not read bytecode from file")?;
 
     let resolver = AddressResolver::new(&bytes);
 
     Ok(results
         .into_iter()
-        .map(|result| ExecutedMutant {
+        .map(|result| ReportableMutant {
             location: resolver.lookup_address(result.offset).unwrap_or_default(),
-            outcome: result.outcome,
+            outcome: result.outcome.into(),
             operator: result.operator,
         })
         .collect())
 }
 
 pub trait Reporter {
-    fn report(&self, executed_mutants: &[ExecutedMutant]) -> Result<()>;
+    fn report(&self, executed_mutants: &[ReportableMutant]) -> Result<()>;
 }
 
-type LineNumberMutantMap<'a> = BTreeMap<u64, Vec<&'a ExecutedMutant>>;
+type LineNumberMutantMap<'a> = BTreeMap<u64, Vec<&'a ReportableMutant>>;
 type FileMutantMap<'a> = BTreeMap<String, LineNumberMutantMap<'a>>;
 
 fn map_mutants_to_files<'a>(
-    executed_mutants: &'a [ExecutedMutant],
+    executed_mutants: &'a [ReportableMutant],
     path_rewriter: Option<&PathRewriter>,
 ) -> FileMutantMap<'a> {
     let mut file_mapping = BTreeMap::new();
@@ -127,13 +127,13 @@ pub struct AccumulatedOutcomes {
     pub mutation_score: f32,
 }
 
-impl AsRef<ExecutedMutant> for ExecutedMutant {
-    fn as_ref(&self) -> &ExecutedMutant {
+impl AsRef<ReportableMutant> for ReportableMutant {
+    fn as_ref(&self) -> &ReportableMutant {
         self
     }
 }
 
-pub fn accumulate_outcomes<E: AsRef<ExecutedMutant>>(
+pub fn accumulate_outcomes<E: AsRef<ReportableMutant>>(
     executed_mutants: &[E],
 ) -> AccumulatedOutcomes {
     let (alive, timeout, killed, error) = executed_mutants.iter().map(|e| e.as_ref()).fold(
@@ -159,7 +159,7 @@ pub fn accumulate_outcomes<E: AsRef<ExecutedMutant>>(
 }
 
 pub fn accumulate_outcomes_for_file(mutants: &LineNumberMutantMap) -> AccumulatedOutcomes {
-    let mut all_outcomes: Vec<&ExecutedMutant> = Vec::new();
+    let mut all_outcomes: Vec<&ReportableMutant> = Vec::new();
 
     for mutants in mutants.values() {
         all_outcomes.extend(mutants.iter());
@@ -266,24 +266,35 @@ mod tests {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm").unwrap();
 
         let executed_mutants = vec![
-            ExecutedMutantFromEngine {
+            ExecutedMutant {
                 offset: 34,
-                outcome: MutationOutcome::Timeout,
+                outcome: ExecutionResult::ProcessExit {
+                    exit_code: 0,
+                    execution_cost: 1337,
+                },
                 operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
-            ExecutedMutantFromEngine {
+            ExecutedMutant {
                 offset: 34,
-                outcome: MutationOutcome::Alive,
+                outcome: ExecutionResult::ProcessExit {
+                    exit_code: 1,
+                    execution_cost: 1337,
+                },
                 operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
-            ExecutedMutantFromEngine {
+            ExecutedMutant {
                 offset: 34,
-                outcome: MutationOutcome::Killed,
+                outcome: ExecutionResult::Timeout,
                 operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
-            ExecutedMutantFromEngine {
+            ExecutedMutant {
                 offset: 34,
-                outcome: MutationOutcome::Error,
+                outcome: ExecutionResult::Error,
+                operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
+            },
+            ExecutedMutant {
+                offset: 34,
+                outcome: ExecutionResult::Skipped,
                 operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
             },
         ];
@@ -291,7 +302,7 @@ mod tests {
         let results = prepare_results(&module, executed_mutants).unwrap();
 
         dbg!(&results);
-        assert_eq!(results.len(), 4);
+        assert_eq!(results.len(), 5);
 
         assert!(results[0]
             .location
@@ -302,9 +313,10 @@ mod tests {
         assert!(*results[0].location.line.as_ref().unwrap() == 3);
         assert!(*results[0].location.column.as_ref().unwrap() == 14);
 
-        assert!(results[0].outcome == MutationOutcome::Timeout);
-        assert!(results[1].outcome == MutationOutcome::Alive);
-        assert!(results[2].outcome == MutationOutcome::Killed);
+        assert!(results[0].outcome == MutationOutcome::Alive);
+        assert!(results[1].outcome == MutationOutcome::Killed);
+        assert!(results[2].outcome == MutationOutcome::Timeout);
         assert!(results[3].outcome == MutationOutcome::Error);
+        assert!(results[4].outcome == MutationOutcome::Alive);
     }
 }
