@@ -167,7 +167,6 @@ impl OperatorRegistry {
 
 #[cfg(test)]
 mod tests {
-    use crate::wasmmodule::Datatype;
     #[allow(unused_imports)]
     use pretty_assertions::{assert_eq, assert_ne};
 
@@ -1003,7 +1002,7 @@ mod tests {
                     let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningScalar {
                         index: 0,
                         params: [ValueType::I32, ValueType::I32].into(),
-                        return_type: Datatype::$datatype,
+                        return_type: ValueType::$datatype,
                     }]);
 
                     let ops = registry.mutants_for_instruction(&Call(0), &context);
@@ -1036,7 +1035,7 @@ mod tests {
                     let context = InstructionContext::new(vec![CallRemovalCandidate::FuncReturningScalar {
                         index: 0,
                         params: [ValueType::I32, ValueType::I32].into(),
-                        return_type: Datatype::$datatype,
+                        return_type: ValueType::$datatype,
                     }]);
                     let ops = registry.mutants_for_instruction(&Call(0), &context);
                     assert_eq!(ops.len(), 0);

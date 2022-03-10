@@ -27,26 +27,6 @@ pub struct InstructionWalkerLocation<'a> {
     pub instruction_offset: u64,
 }
 
-/// WebAssembly native datatypes
-#[derive(Debug, PartialEq)]
-pub enum Datatype {
-    I32,
-    I64,
-    F32,
-    F64,
-}
-
-impl From<ValueType> for Datatype {
-    fn from(val: ValueType) -> Datatype {
-        match val {
-            ValueType::I32 => Datatype::I32,
-            ValueType::I64 => Datatype::I64,
-            ValueType::F32 => Datatype::F32,
-            ValueType::F64 => Datatype::F64,
-        }
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub enum CallRemovalCandidate {
     /// Function does not return anything and has `params` parameters
@@ -56,7 +36,7 @@ pub enum CallRemovalCandidate {
     FuncReturningScalar {
         index: u32,
         params: Vec<ValueType>,
-        return_type: Datatype,
+        return_type: ValueType,
     },
 }
 
@@ -295,7 +275,7 @@ impl<'a> WasmModule<'a> {
                 Some(CallRemovalCandidate::FuncReturningScalar {
                     index,
                     params: func_type.params().into(),
-                    return_type: func_type.results()[0].into(),
+                    return_type: func_type.results()[0],
                 })
             } else {
                 None
@@ -859,7 +839,6 @@ mod tests {
     #[test]
     fn scalar_functions() -> Result<()> {
         use CallRemovalCandidate::*;
-        use Datatype::*;
 
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
 
@@ -878,12 +857,12 @@ mod tests {
             FuncReturningScalar {
                 index: 2,
                 params: [ValueType::I32, ValueType::I32].into(),
-                return_type: I32,
+                return_type: ValueType::I32,
             },
             FuncReturningScalar {
                 index: 3,
                 params: [].into(),
-                return_type: I32,
+                return_type: ValueType::I32,
             },
         ];
         assert_eq!(result[0..4], expected);

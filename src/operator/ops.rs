@@ -1,4 +1,4 @@
-use crate::wasmmodule::{CallRemovalCandidate, Datatype};
+use crate::wasmmodule::CallRemovalCandidate;
 use parity_wasm::elements::Instruction::{self, *};
 use parity_wasm::elements::{BlockType, ValueType};
 
@@ -579,18 +579,13 @@ impl CallRemoveScalarCall {
                     {
                         if *index == func_ref {
                             let replacement = match return_type {
-                                Datatype::I32 => I32Const(42),
-                                Datatype::I64 => I64Const(42),
-                                Datatype::F32 => F32Const(42f32.to_bits()),
-                                Datatype::F64 => F64Const(42f64.to_bits()),
+                                ValueType::I32 => I32Const(42),
+                                ValueType::I64 => I64Const(42),
+                                ValueType::F32 => F32Const(42f32.to_bits()),
+                                ValueType::F64 => F64Const(42f64.to_bits()),
                             };
 
-                            let result_type = match return_type {
-                                Datatype::I32 => Value(I32),
-                                Datatype::I64 => Value(I64),
-                                Datatype::F32 => Value(F32),
-                                Datatype::F64 => Value(F64),
-                            };
+                            let result_type = Value(*return_type);
 
                             return Some(Self {
                                 old: instr.clone(),
