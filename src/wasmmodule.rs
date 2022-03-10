@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashSet};
+use std::{borrow::Cow, collections::HashSet, path::Path};
 
 use crate::{
     addressresolver::AddressResolver,
@@ -171,15 +171,17 @@ impl<'a> WasmModule<'a> {
         self.fix_tables();
         self.fix_exports();
 
+        // binary operators have two params, so we need to save at least two parameters
+        let number_of_saved_params = self.max_number_of_params_of_same_type().max(2);
         let global_section = self.get_or_create_global_section();
 
-        // TODO: Make number_of_saved_params adaptive
-        let parameter_saver = ParameterSaver::new(30, global_section.entries_mut());
+        let parameter_saver =
+            ParameterSaver::new(number_of_saved_params, global_section.entries_mut());
 
         let bodies = self
             .module
             .code_section_mut()
-            .context("Module does not have a code section")? // TODO: Error handling?
+            .context("Module does not have a code section")?
             .bodies_mut();
 
         let mut locations = locations.to_vec();
@@ -484,6 +486,40 @@ impl<'a> WasmModule<'a> {
         }
     }
 
+    /// Goes through the type signatures and get the maximum number of params of the same type
+    fn max_number_of_params_of_same_type(&self) -> usize {
+        let type_section = self
+            .module
+            .type_section()
+            .expect("module does not have a type section");
+
+        let mut max = 0;
+
+        for Type::Function(t) in type_section.types() {
+            let mut i32_params = 0;
+            let mut i64_params = 0;
+            let mut f32_params = 0;
+            let mut f64_params = 0;
+
+            for param in t.params() {
+                match param {
+                    ValueType::I32 => i32_params += 1,
+                    ValueType::I64 => i64_params += 1,
+                    ValueType::F32 => f32_params += 1,
+                    ValueType::F64 => f64_params += 1,
+                }
+            }
+
+            max = max
+                .max(i32_params)
+                .max(i64_params)
+                .max(f32_params)
+                .max(f64_params);
+        }
+
+        max
+    }
+
     /// Serialize module
     ///
     /// Debug information that may have been present in the original module
@@ -508,6 +544,15 @@ impl<'a> WasmModule<'a> {
 
     pub fn path(&self) -> &str {
         &self.path
+    }
+
+    #[allow(dead_code)]
+    pub fn dump<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let bytes = self.to_bytes()?;
+
+        std::fs::write(path, bytes)?;
+
+        Ok(())
     }
 }
 
@@ -867,6 +912,20 @@ mod tests {
         let type_index = module.find_or_insert_trace_function_signature()?;
         let function_index = module.add_trace_function_import("__wasmut_trace", type_index)?;
         assert_eq!(function_index, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn max_number_of_params_of_same_type() -> Result<()> {
+        let module = WasmModule::from_file("testdata/factorial/test.wasm")?;
+        assert_eq!(module.max_number_of_params_of_same_type(), 1);
+
+        let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
+        assert_eq!(module.max_number_of_params_of_same_type(), 2);
+
+        let module = WasmModule::from_file("testdata/simple_add64/test.wasm")?;
+        assert_eq!(module.max_number_of_params_of_same_type(), 2);
+
         Ok(())
     }
 }

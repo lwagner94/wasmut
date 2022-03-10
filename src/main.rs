@@ -259,7 +259,7 @@ fn main() {
     Builder::new()
         .filter_level(LevelFilter::Info)
         .format_timestamp(None)
-        // .format_target(false)
+        .format_target(false)
         .filter_module("wasmer_wasi", LevelFilter::Warn)
         .filter_module("regalloc", LevelFilter::Warn)
         .filter_module("cranelift_codegen", LevelFilter::Warn)
