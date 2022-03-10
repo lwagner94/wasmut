@@ -103,7 +103,7 @@ fn mutate(
     let executor = Executor::new(config);
     let results = executor.execute_mutants(&module, &mutations)?;
 
-    let executed_mutants = reporter::prepare_results(&module, mutations, results)?;
+    let executed_mutants = reporter::prepare_results(&module, results)?;
 
     match report_type {
         Output::Console => {
@@ -261,6 +261,9 @@ fn main() {
         .format_timestamp(None)
         .format_target(false)
         .filter_module("wasmer_wasi", LevelFilter::Warn)
+        .filter_module("regalloc", LevelFilter::Warn)
+        .filter_module("cranelift_codegen", LevelFilter::Warn)
+        .filter_module("wasmer_compiler_cranelift", LevelFilter::Warn)
         .init();
 
     match run_main(cli) {
@@ -322,7 +325,7 @@ mod tests {
             module_path.to_str().unwrap(),
         ]);
         let result = run_main(args);
-        dbg!(&result);
+        // dbg!(&result);
         assert!(result.is_ok());
         assert!(output_dir.path().join("index.html").exists());
     }

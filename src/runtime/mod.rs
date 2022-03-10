@@ -2,14 +2,10 @@ pub mod wasmer;
 
 use std::collections::HashSet;
 
-use crate::policy::ExecutionPolicy;
 use crate::wasmmodule::WasmModule;
 
-use anyhow::Result;
-
-use self::wasmer::WasmerRuntime;
-
 /// Result of an executed module
+#[derive(Debug)]
 pub enum ExecutionResult {
     /// Normal termination
     ProcessExit { exit_code: u32, execution_cost: u64 },
@@ -23,36 +19,32 @@ pub enum ExecutionResult {
     Error,
 }
 
-/// This trait represents a Runtime implementation
-pub trait Runtime {
-    /// Create a new runtime instance
-    fn new(
-        module: &WasmModule,
-        discard_output: bool,
-        coverage: bool,
-        map_dirs: &[(String, String)],
-    ) -> Result<Self>
-    where
-        Self: Sized;
-
-    /// Call the _start entry point of the module
-    fn call_test_function(&mut self, policy: ExecutionPolicy) -> Result<ExecutionResult>;
-
-    /// Return execution trace.
-    fn trace_points(&self) -> Option<HashSet<u64>>;
+#[derive(Default, Clone)]
+pub struct TracePoints {
+    points: HashSet<u64>,
 }
 
-/// Utility function used to create a new runtime.
-pub fn create_runtime(
-    module: &WasmModule,
-    discard_output: bool,
-    coverage: bool,
-    map_dirs: &[(String, String)],
-) -> Result<Box<dyn Runtime>> {
-    Ok(Box::new(WasmerRuntime::new(
-        module,
-        discard_output,
-        coverage,
-        map_dirs,
-    )?))
+impl TracePoints {
+    fn add_point(&mut self, offset: u64) {
+        self.points.insert(offset);
+    }
+
+    pub fn is_covered(&self, offset: u64) -> bool {
+        self.points.contains(&offset)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn trace_points() {
+        let mut trace_points = TracePoints::default();
+
+        assert!(!trace_points.is_covered(0));
+        assert!(!trace_points.is_covered(1337));
+
+        trace_points.add_point(10);
+        assert!(trace_points.is_covered(10));
+    }
 }

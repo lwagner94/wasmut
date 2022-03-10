@@ -1,9 +1,12 @@
-use std::{borrow::Cow, collections::HashSet};
+use std::{borrow::Cow, collections::HashSet, path::Path};
 
-use crate::{addressresolver::AddressResolver, mutation::Mutation};
+use crate::{
+    addressresolver::AddressResolver,
+    mutation::{Mutation, MutationLocation},
+};
 use parity_wasm::elements::{
-    External, FunctionType, ImportEntry, Instruction, Internal, Module, TableElementType, Type,
-    ValueType,
+    External, FunctionType, GlobalEntry, GlobalSection, GlobalType, ImportEntry, InitExpr,
+    Instruction, Internal, Module, Section, TableElementType, Type, ValueType,
 };
 
 use anyhow::{Context, Result};
@@ -47,12 +50,12 @@ impl From<ValueType> for Datatype {
 #[derive(Debug, PartialEq)]
 pub enum CallRemovalCandidate {
     /// Function does not return anything and has `params` parameters
-    FuncReturningVoid { index: u32, params: usize },
+    FuncReturningVoid { index: u32, params: Vec<ValueType> },
 
     /// Function returns scalar and has `params` parameters
     FuncReturningScalar {
         index: u32,
-        params: usize,
+        params: Vec<ValueType>,
         return_type: Datatype,
     },
 }
@@ -135,20 +138,108 @@ impl<'a> WasmModule<'a> {
     }
 
     /// Apply a mutation
-    fn mutate(&mut self, mutation: &Mutation) {
+    fn mutate(&mut self, mutation_location: &MutationLocation, mutation_index: usize) {
         let instructions = self
             .module
             .code_section_mut()
-            .expect("Module does not have a code section")
+            .expect("Module does not have a code section") // TODO: Error handling?
             .bodies_mut()
-            .get_mut(mutation.function_number as usize)
+            .get_mut(mutation_location.function_number as usize)
             .expect("unexpected funtion index")
             .code_mut()
             .elements_mut();
 
+        let mutation = mutation_location
+            .mutations
+            .get(mutation_index)
+            .expect("Invalid mutation index");
+
         mutation
             .operator
-            .apply(instructions, mutation.statement_number);
+            .apply(instructions, mutation_location.statement_number);
+    }
+
+    /// Apply all given mutations
+    fn mutate_all(&mut self, locations: &[MutationLocation]) -> Result<()> {
+        let type_index = self.find_or_insert_check_mutant_function_signature()?;
+        let function_index =
+            self.add_trace_function_import("__wasmut_check_mutant_id", type_index)?;
+
+        // Increment all function-indices, since the
+        // function section now contains the trace_function at index 0
+        self.fix_call_instructions();
+        self.fix_tables();
+        self.fix_exports();
+
+        // binary operators have two params, so we need to save at least two parameters
+        let number_of_saved_params = self.max_number_of_params_of_same_type().max(2);
+        let global_section = self.get_or_create_global_section();
+
+        let parameter_saver =
+            ParameterSaver::new(number_of_saved_params, global_section.entries_mut());
+
+        let bodies = self
+            .module
+            .code_section_mut()
+            .context("Module does not have a code section")?
+            .bodies_mut();
+
+        let mut locations = locations.to_vec();
+
+        locations.sort_by(|a, b| b.statement_number.cmp(&a.statement_number));
+
+        for location in locations {
+            let instructions = bodies
+                .get_mut(location.function_number as usize)
+                .context("unexpected funtion index")?
+                .code_mut()
+                .elements_mut();
+
+            let params = location
+                .mutations
+                .get(0)
+                .expect("No mutations in location")
+                .operator
+                .parameters();
+
+            let tail = instructions.split_off(location.statement_number as usize);
+            // Save parameters
+            // let (save_vars, restore_vars) = generate_preamble(globals, &location.mutations);
+
+            let (mut save_sequence, restore_sequence) = parameter_saver.save_sequence(params);
+            let new_sequence =
+                generate_mutant_sequence(function_index, &location.mutations, &restore_sequence);
+
+            // TODO: This is needed, because when discovering mutations,
+            // the check_mutant_id function is not inserted yet.
+            // As a result, when we generate call instructions,
+            // the function index is wrong.
+            // Quick fix is to increment all function indices, except
+            // those of calls to the check_mutant_id function
+            let new_sequence: Vec<Instruction> = new_sequence
+                .iter()
+                .map(|i| match i {
+                    Instruction::Call(func) if *func != 0 => Instruction::Call(func + 1),
+                    e => e.clone(),
+                })
+                .collect();
+
+            instructions.append(&mut save_sequence);
+            instructions.extend_from_slice(&new_sequence);
+            instructions.extend_from_slice(&tail[1..]);
+        }
+
+        Ok(())
+    }
+
+    /// Get reference to global section, or create it if it does not exist.
+    fn get_or_create_global_section(&mut self) -> &mut parity_wasm::elements::GlobalSection {
+        if self.module.global_section_mut().is_none() {
+            let sections = self.module.sections_mut();
+            sections.push(Section::Global(GlobalSection::default()));
+        }
+
+        self.module.global_section_mut().unwrap()
     }
 
     /// Return a set of all function names in the module
@@ -195,17 +286,15 @@ impl<'a> WasmModule<'a> {
 
             let Type::Function(func_type) = ty;
 
-            let number_of_params = func_type.params().len();
-
             if func_type.results().is_empty() {
                 Some(CallRemovalCandidate::FuncReturningVoid {
                     index,
-                    params: number_of_params,
+                    params: func_type.params().into(),
                 })
             } else if func_type.results().len() == 1 {
                 Some(CallRemovalCandidate::FuncReturningScalar {
                     index,
-                    params: number_of_params,
+                    params: func_type.params().into(),
                     return_type: func_type.results()[0].into(),
                 })
             } else {
@@ -245,10 +334,10 @@ impl<'a> WasmModule<'a> {
     pub fn insert_trace_points(&mut self) -> Result<()> {
         // Make sure that the type signature of the trace function
         // is contained in the function table
-        let type_index = self.find_or_insert_type_signature()?;
+        let type_index = self.find_or_insert_trace_function_signature()?;
 
         // Add trace function to the import section
-        let function_index = self.add_trace_function_import(type_index)?;
+        let function_index = self.add_trace_function_import("__wasmut_trace", type_index)?;
 
         // Increment all function-indices, since the
         // function section now contains the trace_function at index 0
@@ -263,7 +352,19 @@ impl<'a> WasmModule<'a> {
         Ok(())
     }
 
-    fn find_or_insert_type_signature(&mut self) -> Result<u32> {
+    fn find_or_insert_trace_function_signature(&mut self) -> Result<u32> {
+        self.find_or_insert_type_signature(&[ValueType::I64], &[])
+    }
+
+    fn find_or_insert_check_mutant_function_signature(&mut self) -> Result<u32> {
+        self.find_or_insert_type_signature(&[ValueType::I64], &[ValueType::I32])
+    }
+
+    fn find_or_insert_type_signature(
+        &mut self,
+        params: &[ValueType],
+        results: &[ValueType],
+    ) -> Result<u32> {
         let type_section = self
             .module
             .type_section_mut()
@@ -276,7 +377,7 @@ impl<'a> WasmModule<'a> {
             .enumerate()
             .filter_map(|(i, t)| {
                 let Type::Function(f) = t;
-                if f.params() == [ValueType::I64] && f.results().is_empty() {
+                if f.params() == params && f.results() == results {
                     Some(i as u32)
                 } else {
                     None
@@ -286,14 +387,14 @@ impl<'a> WasmModule<'a> {
 
         Ok(index.unwrap_or_else(|| {
             types.push(Type::Function(FunctionType::new(
-                vec![ValueType::I64],
-                vec![],
+                params.into(),
+                results.into(),
             )));
             (types.len() - 1) as u32
         }))
     }
 
-    fn add_trace_function_import(&mut self, type_index: u32) -> Result<u32> {
+    fn add_trace_function_import(&mut self, func_name: &str, type_index: u32) -> Result<u32> {
         // TODO: What should happen if there aren't imports there yet?
         let import_section = self
             .module
@@ -305,7 +406,7 @@ impl<'a> WasmModule<'a> {
             0,
             ImportEntry::new(
                 "wasmut_api".into(),
-                "__wasmut_trace".into(),
+                func_name.into(),
                 External::Function(type_index),
             ),
         );
@@ -385,6 +486,40 @@ impl<'a> WasmModule<'a> {
         }
     }
 
+    /// Goes through the type signatures and get the maximum number of params of the same type
+    fn max_number_of_params_of_same_type(&self) -> usize {
+        let type_section = self
+            .module
+            .type_section()
+            .expect("module does not have a type section");
+
+        let mut max = 0;
+
+        for Type::Function(t) in type_section.types() {
+            let mut i32_params = 0;
+            let mut i64_params = 0;
+            let mut f32_params = 0;
+            let mut f64_params = 0;
+
+            for param in t.params() {
+                match param {
+                    ValueType::I32 => i32_params += 1,
+                    ValueType::I64 => i64_params += 1,
+                    ValueType::F32 => f32_params += 1,
+                    ValueType::F64 => f64_params += 1,
+                }
+            }
+
+            max = max
+                .max(i32_params)
+                .max(i64_params)
+                .max(f32_params)
+                .max(f64_params);
+        }
+
+        max
+    }
+
     /// Serialize module
     ///
     /// Debug information that may have been present in the original module
@@ -394,21 +529,298 @@ impl<'a> WasmModule<'a> {
     }
 
     /// Create a clone and apply a mutation
-    pub fn mutated_clone(&self, mutation: &Mutation) -> Self {
+    pub fn clone_and_mutate(&self, location: &MutationLocation, mutation_index: usize) -> Self {
         let mut mutant = self.clone();
-        mutant.mutate(mutation);
+        mutant.mutate(location, mutation_index);
         mutant
+    }
+
+    /// Create a clone and apply a mutation
+    pub fn clone_and_mutate_all(&self, locations: &[MutationLocation]) -> Result<Self> {
+        let mut mutant = self.clone();
+        mutant.mutate_all(locations)?;
+        Ok(mutant)
     }
 
     pub fn path(&self) -> &str {
         &self.path
     }
+
+    #[allow(dead_code)]
+    pub fn dump<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let bytes = self.to_bytes()?;
+
+        std::fs::write(path, bytes)?;
+
+        Ok(())
+    }
+}
+
+fn generate_mutant_sequence(
+    func_index: u32,
+    mutations: &[Mutation],
+    restore_sequence: &[Instruction],
+) -> Vec<Instruction> {
+    let mut instructions = Vec::new();
+
+    let mutation = mutations
+        .get(0)
+        .expect("mutation slice is empty, this is bug.");
+
+    instructions.push(Instruction::I64Const(mutation.id));
+    instructions.push(Instruction::Call(func_index));
+    instructions.push(Instruction::If(mutation.operator.result()));
+    instructions.extend_from_slice(restore_sequence);
+
+    instructions.append(&mut mutation.operator.replacement());
+    instructions.push(Instruction::Else);
+
+    let next = &mutations[1..];
+    if next.is_empty() {
+        instructions.extend_from_slice(restore_sequence);
+        instructions.push(mutations[0].operator.old_instruction().clone());
+    } else {
+        instructions.append(&mut generate_mutant_sequence(
+            func_index,
+            next,
+            restore_sequence,
+        ));
+    }
+
+    instructions.push(Instruction::End);
+
+    instructions
+}
+
+struct ParameterSaver {
+    offset: usize,
+    number_of_saved_params: usize,
+}
+
+impl ParameterSaver {
+    fn new(number_of_saved_params: usize, globals: &mut Vec<GlobalEntry>) -> Self {
+        let offset = globals.len();
+
+        for _ in 0..number_of_saved_params {
+            globals.push(GlobalEntry::new(
+                GlobalType::new(ValueType::I32, true),
+                InitExpr::new(vec![Instruction::I32Const(0), Instruction::End]),
+            ));
+        }
+
+        for _ in 0..number_of_saved_params {
+            globals.push(GlobalEntry::new(
+                GlobalType::new(ValueType::I64, true),
+                InitExpr::new(vec![Instruction::I64Const(0), Instruction::End]),
+            ));
+        }
+
+        for _ in 0..number_of_saved_params {
+            globals.push(GlobalEntry::new(
+                GlobalType::new(ValueType::F32, true),
+                InitExpr::new(vec![Instruction::F32Const(0), Instruction::End]),
+            ));
+        }
+
+        for _ in 0..number_of_saved_params {
+            globals.push(GlobalEntry::new(
+                GlobalType::new(ValueType::F64, true),
+                InitExpr::new(vec![Instruction::F64Const(0), Instruction::End]),
+            ));
+        }
+
+        Self {
+            offset,
+            number_of_saved_params,
+        }
+    }
+
+    fn save_sequence(&self, params: &[ValueType]) -> (Vec<Instruction>, Vec<Instruction>) {
+        let mut i32_params = 0;
+        let mut i64_params = 0;
+        let mut f32_params = 0;
+        let mut f64_params = 0;
+
+        let mut save_sequence = Vec::new();
+        let mut restore_sequence = Vec::new();
+
+        for parameter in params.iter() {
+            let index = match parameter {
+                ValueType::I32 => {
+                    let index = self.offset + i32_params;
+                    i32_params += 1;
+                    index
+                }
+                ValueType::I64 => {
+                    let index = self.offset + self.number_of_saved_params + i64_params;
+                    i64_params += 1;
+                    index
+                }
+                ValueType::F32 => {
+                    let index = self.offset + 2 * self.number_of_saved_params + f32_params;
+                    f32_params += 1;
+                    index
+                }
+                ValueType::F64 => {
+                    let index = self.offset + 3 * self.number_of_saved_params + f64_params;
+                    f64_params += 1;
+                    index
+                }
+            };
+
+            save_sequence.push(Instruction::SetGlobal(index as u32));
+            restore_sequence.push(Instruction::GetGlobal(index as u32));
+        }
+
+        save_sequence.reverse();
+
+        (save_sequence, restore_sequence)
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::operator::ops::{
+        BinaryOperatorAddToSub, BinaryOperatorMulToDivS, BinaryOperatorMulToDivU,
+    };
+
+    #[allow(unused_imports)]
+    use pretty_assertions::{assert_eq, assert_ne};
+
     use super::*;
     use anyhow::Result;
+    use parity_wasm::elements::BlockType;
+
+    #[test]
+    fn parameter_save_restore() {
+        let mut entries = vec![GlobalEntry::new(
+            GlobalType::new(ValueType::I32, true),
+            InitExpr::empty(),
+        )];
+
+        let params = &[
+            ValueType::I32,
+            ValueType::I32,
+            ValueType::I64,
+            ValueType::I64,
+            ValueType::F32,
+            ValueType::F32,
+            ValueType::F64,
+            ValueType::F64,
+        ];
+
+        let saver = ParameterSaver::new(10, &mut entries);
+
+        assert_eq!(entries.len(), 41);
+
+        let (save, restore) = saver.save_sequence(params);
+
+        assert_eq!(
+            save,
+            vec![
+                Instruction::SetGlobal(32),
+                Instruction::SetGlobal(31),
+                Instruction::SetGlobal(22),
+                Instruction::SetGlobal(21),
+                Instruction::SetGlobal(12),
+                Instruction::SetGlobal(11),
+                Instruction::SetGlobal(2),
+                Instruction::SetGlobal(1)
+            ]
+        );
+
+        assert_eq!(
+            restore,
+            vec![
+                Instruction::GetGlobal(1),
+                Instruction::GetGlobal(2),
+                Instruction::GetGlobal(11),
+                Instruction::GetGlobal(12),
+                Instruction::GetGlobal(21),
+                Instruction::GetGlobal(22),
+                Instruction::GetGlobal(31),
+                Instruction::GetGlobal(32),
+            ]
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn generate_empty_case() {
+        generate_mutant_sequence(1337, &[], &[]);
+    }
+
+    #[test]
+    fn generate_base_case() {
+        let result = generate_mutant_sequence(
+            1337,
+            &[Mutation {
+                id: 1234,
+                operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
+            }],
+            &[Instruction::GetGlobal(10), Instruction::GetGlobal(11)],
+        );
+
+        assert_eq!(
+            result,
+            vec![
+                Instruction::I64Const(1234),
+                Instruction::Call(1337),
+                Instruction::If(BlockType::Value(ValueType::I32)),
+                Instruction::GetGlobal(10),
+                Instruction::GetGlobal(11),
+                Instruction::I32Sub,
+                Instruction::Else,
+                Instruction::GetGlobal(10),
+                Instruction::GetGlobal(11),
+                Instruction::I32Add,
+                Instruction::End
+            ]
+        );
+    }
+
+    #[test]
+    fn generate_recursive_case() {
+        let result = generate_mutant_sequence(
+            1337,
+            &[
+                Mutation {
+                    id: 1234,
+                    operator: Box::new(BinaryOperatorMulToDivS::new(&Instruction::I32Mul).unwrap()),
+                },
+                Mutation {
+                    id: 1235,
+                    operator: Box::new(BinaryOperatorMulToDivU::new(&Instruction::I32Mul).unwrap()),
+                },
+            ],
+            &[Instruction::GetGlobal(10), Instruction::GetGlobal(11)],
+        );
+
+        assert_eq!(
+            result,
+            vec![
+                Instruction::I64Const(1234),
+                Instruction::Call(1337),
+                Instruction::If(BlockType::Value(ValueType::I32)),
+                Instruction::GetGlobal(10),
+                Instruction::GetGlobal(11),
+                Instruction::I32DivS,
+                Instruction::Else,
+                Instruction::I64Const(1235),
+                Instruction::Call(1337),
+                Instruction::If(BlockType::Value(ValueType::I32)),
+                Instruction::GetGlobal(10),
+                Instruction::GetGlobal(11),
+                Instruction::I32DivU,
+                Instruction::Else,
+                Instruction::GetGlobal(10),
+                Instruction::GetGlobal(11),
+                Instruction::I32Mul,
+                Instruction::End,
+                Instruction::End
+            ]
+        );
+    }
 
     #[test]
     fn test_load_from_file() {
@@ -452,79 +864,36 @@ mod tests {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
 
         let result = module.call_removal_candidates().unwrap();
+        dbg!(&result);
 
         let expected = vec![
             FuncReturningVoid {
                 index: 0,
-                params: 1,
+                params: [ValueType::I32].into(),
             },
             FuncReturningVoid {
                 index: 1,
-                params: 0,
+                params: [].into(),
             },
             FuncReturningScalar {
                 index: 2,
-                params: 2,
+                params: [ValueType::I32, ValueType::I32].into(),
                 return_type: I32,
             },
             FuncReturningScalar {
                 index: 3,
-                params: 0,
-                return_type: I32,
-            },
-            FuncReturningScalar {
-                index: 4,
-                params: 0,
-                return_type: I32,
-            },
-            FuncReturningScalar {
-                index: 5,
-                params: 0,
-                return_type: I32,
-            },
-            FuncReturningVoid {
-                index: 6,
-                params: 1,
-            },
-            FuncReturningVoid {
-                index: 7,
-                params: 1,
-            },
-            FuncReturningVoid {
-                index: 8,
-                params: 0,
-            },
-            FuncReturningVoid {
-                index: 9,
-                params: 0,
-            },
-            FuncReturningVoid {
-                index: 10,
-                params: 1,
-            },
-            FuncReturningVoid {
-                index: 11,
-                params: 0,
-            },
-            FuncReturningScalar {
-                index: 12,
-                params: 0,
-                return_type: I32,
-            },
-            FuncReturningScalar {
-                index: 13,
-                params: 0,
+                params: [].into(),
                 return_type: I32,
             },
         ];
-        assert_eq!(result, expected);
+        assert_eq!(result[0..4], expected);
         Ok(())
     }
 
     #[test]
     fn find_or_insert_type_signature_should_insert() -> Result<()> {
         let mut module = WasmModule::from_file("testdata/factorial/test.wasm")?;
-        let index = module.find_or_insert_type_signature()?;
+        let index = module.find_or_insert_trace_function_signature()?;
         assert_eq!(index, 4);
         Ok(())
     }
@@ -532,7 +901,7 @@ mod tests {
     #[test]
     fn find_or_insert_type_signature_reuse() -> Result<()> {
         let mut module = WasmModule::from_file("testdata/i64_param/test.wasm")?;
-        let index = module.find_or_insert_type_signature()?;
+        let index = module.find_or_insert_trace_function_signature()?;
         assert_eq!(index, 2);
         Ok(())
     }
@@ -540,9 +909,23 @@ mod tests {
     #[test]
     fn add_trace_function_import_expected_function_index() -> Result<()> {
         let mut module = WasmModule::from_file("testdata/i64_param/test.wasm")?;
-        let type_index = module.find_or_insert_type_signature()?;
-        let function_index = module.add_trace_function_import(type_index)?;
+        let type_index = module.find_or_insert_trace_function_signature()?;
+        let function_index = module.add_trace_function_import("__wasmut_trace", type_index)?;
         assert_eq!(function_index, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn max_number_of_params_of_same_type() -> Result<()> {
+        let module = WasmModule::from_file("testdata/factorial/test.wasm")?;
+        assert_eq!(module.max_number_of_params_of_same_type(), 1);
+
+        let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
+        assert_eq!(module.max_number_of_params_of_same_type(), 2);
+
+        let module = WasmModule::from_file("testdata/simple_add64/test.wasm")?;
+        assert_eq!(module.max_number_of_params_of_same_type(), 2);
+
         Ok(())
     }
 }

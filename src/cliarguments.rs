@@ -73,6 +73,7 @@ pub enum CLICommand {
         /// Path to the wasm module
         wasmfile: String,
     },
+
     /// Create new configuration file.
     NewConfig {
         /// Path to the new configuration file

@@ -10,6 +10,20 @@
 #    needs to access any files,  you can use the map_dirs option to define path mappings.
 #map_dirs = [["testcases/foo", "bar"],]
 
+#    Before executing mutants, wasmut will run the wasm module without 
+#    any mutations and generate coverage information. 
+#    If `coverage_based_execution` is enabled, the execution of mutants
+#    where the mutated instruction was never executed will be skipped.
+#    Defaults to `true`.
+#coverage_based_execution = true
+
+#    If `meta_mutant` is enabled, a single mutant containing all mutations will be generated.
+#    During execution, mutations are activated by setting a flag. The benefit
+#    of this is that only a single mutant needs to be compiled by the WebAssembly runtime,
+#    and thus the execution time is reduced significantly.
+#    Defaults to `true`.
+#meta_mutant = true
+
 #[filter]
 #    By default, all files and functions are allowed, which means that
 #    every wasm-instruction can potentially be mutated. 

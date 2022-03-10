@@ -43,6 +43,11 @@ pub struct EngineConfig {
     /// line was never executed in the baseline run.
     /// Defaults to true
     coverage_based_execution: Option<bool>,
+
+    /// If true, a single mutant containing all mutations will be generated.
+    /// During execution, mutations are activated by setting a flag
+    /// Defaults to true.
+    meta_mutant: Option<bool>,
 }
 
 impl EngineConfig {
@@ -63,6 +68,11 @@ impl EngineConfig {
     /// Skip mutant execution based on coverage
     pub fn coverage_based_execution(&self) -> bool {
         self.coverage_based_execution.unwrap_or(true)
+    }
+
+    /// Generate a single meta-mutant
+    pub fn meta_mutant(&self) -> bool {
+        self.meta_mutant.unwrap_or(true)
     }
 }
 
@@ -214,10 +224,12 @@ mod tests {
             timeout_multiplier = 10
             map_dirs = [["a/foo", "b/bar"], ["abcd", "abcd"]]
             coverage_based_execution = false
+            meta_mutant = false
             "#,
         )?;
         assert_eq!(config.engine().timeout_multiplier(), 10.0);
         assert!(!config.engine().coverage_based_execution());
+        assert!(!config.engine().meta_mutant());
         assert_eq!(
             config.engine().map_dirs(),
             [
@@ -281,6 +293,7 @@ mod tests {
         )?;
         assert_eq!(config.engine().timeout_multiplier(), 2.0);
         assert!(config.engine().coverage_based_execution());
+        assert!(config.engine().meta_mutant());
         assert_eq!(config.engine().map_dirs(), []);
         assert_eq!(config.filter().allowed_files(), None);
         assert_eq!(config.filter().allowed_functions(), None);

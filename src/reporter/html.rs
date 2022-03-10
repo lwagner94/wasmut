@@ -13,8 +13,8 @@ use syntect::{
 use crate::{config::ReportConfig, templates};
 
 use super::{
-    rewriter::PathRewriter, AccumulatedOutcomes, ExecutedMutant, LineNumberMutantMap,
-    MutationOutcome, Reporter,
+    rewriter::PathRewriter, AccumulatedOutcomes, LineNumberMutantMap, MutationOutcome,
+    ReportableMutant, Reporter,
 };
 
 impl From<MutationOutcome> for String {
@@ -87,7 +87,7 @@ pub struct HTMLReporter<'a> {
 }
 
 impl<'a> Reporter for HTMLReporter<'a> {
-    fn report(&self, executed_mutants: &[super::ExecutedMutant]) -> Result<()> {
+    fn report(&self, executed_mutants: &[super::ReportableMutant]) -> Result<()> {
         // Prepare output directory
         self.create_output_directory()?;
         self.create_static_files()?;
@@ -199,7 +199,7 @@ impl<'a> HTMLReporter<'a> {
     /// Render individual source files
     fn render_source_files(
         &self,
-        executed_mutants: &[ExecutedMutant],
+        executed_mutants: &[ReportableMutant],
         report_info: &ReportInfo,
         template_engine: &Handlebars,
     ) -> Result<Vec<SourceFile>> {
@@ -246,7 +246,7 @@ impl<'a> HTMLReporter<'a> {
     /// Render index file.
     fn render_index(
         &self,
-        executed_mutants: &[ExecutedMutant],
+        executed_mutants: &[ReportableMutant],
         source_files: &[SourceFile],
         report_info: &ReportInfo,
         template_engine: &Handlebars,
@@ -324,7 +324,7 @@ impl SourceLine {
     fn new(
         line_nr: u64,
         line_content: &str,
-        mutants: &[&ExecutedMutant],
+        mutants: &[&ReportableMutant],
         mut html_generator: ClassedHTMLGenerator,
     ) -> Self {
         // Generate HTML code for a line of source code
