@@ -73,8 +73,8 @@ pub fn prepare_results(
         .into_iter()
         .map(|result| ReportableMutant {
             location: resolver.lookup_address(result.offset).unwrap_or_default(),
-            outcome: result.outcome.into(),
-            operator: result.operator,
+            outcome: result.result.into(),
+            operator: result.mutation_operator,
         })
         .collect())
 }
@@ -268,34 +268,44 @@ mod tests {
         let executed_mutants = vec![
             ExecutedMutant {
                 offset: 34,
-                outcome: ExecutionResult::ProcessExit {
+                result: ExecutionResult::ProcessExit {
                     exit_code: 0,
                     execution_cost: 1337,
                 },
-                operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
+                mutation_operator: Box::new(
+                    BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap(),
+                ),
             },
             ExecutedMutant {
                 offset: 34,
-                outcome: ExecutionResult::ProcessExit {
+                result: ExecutionResult::ProcessExit {
                     exit_code: 1,
                     execution_cost: 1337,
                 },
-                operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
+                mutation_operator: Box::new(
+                    BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap(),
+                ),
             },
             ExecutedMutant {
                 offset: 34,
-                outcome: ExecutionResult::Timeout,
-                operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
+                result: ExecutionResult::Timeout,
+                mutation_operator: Box::new(
+                    BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap(),
+                ),
             },
             ExecutedMutant {
                 offset: 34,
-                outcome: ExecutionResult::Error,
-                operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
+                result: ExecutionResult::Error,
+                mutation_operator: Box::new(
+                    BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap(),
+                ),
             },
             ExecutedMutant {
                 offset: 34,
-                outcome: ExecutionResult::Skipped,
-                operator: Box::new(BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap()),
+                result: ExecutionResult::Skipped,
+                mutation_operator: Box::new(
+                    BinaryOperatorAddToSub::new(&Instruction::I32Add).unwrap(),
+                ),
             },
         ];
 

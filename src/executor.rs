@@ -13,8 +13,8 @@ use rayon::prelude::*;
 #[derive(Debug)]
 pub struct ExecutedMutant {
     pub offset: u64,
-    pub outcome: ExecutionResult,
-    pub operator: Box<dyn InstructionReplacement>,
+    pub result: ExecutionResult,
+    pub mutation_operator: Box<dyn InstructionReplacement>,
 }
 
 /// Execution engine for WebAssembly modules
@@ -52,25 +52,8 @@ impl<'a> Executor<'a> {
     /// The stdout/stderr output of the module will not be supressed
     pub fn execute(&self, module: &WasmModule) -> Result<()> {
         let mut runtime = WasmerRuntime::new(module, false, self.mapped_dirs)?;
-
-        // TODO: Code duplication?
-        match runtime.call_test_function(ExecutionPolicy::RunUntilReturn)? {
-            ExecutionResult::ProcessExit {
-                exit_code,
-                execution_cost,
-            } => {
-                if exit_code == 0 {
-                    log::info!("Module executed in {execution_cost} cycles");
-                } else {
-                    bail!("Module returned exit code {exit_code}");
-                }
-            }
-            ExecutionResult::Timeout => {
-                panic!("Execution limit exceeded even though we set no limit!")
-            }
-            ExecutionResult::Error => bail!("Module failed to execute"),
-            ExecutionResult::Skipped => panic!("Runtime returned ExecutionResult::Skipped"),
-        };
+        let execution_cost = self.calculate_execution_cost(&mut runtime)?;
+        log::info!("Module executed in {execution_cost} cycles");
 
         Ok(())
     }
@@ -93,13 +76,7 @@ impl<'a> Executor<'a> {
         }?;
 
         if self.coverage {
-            let skipped = outcomes.iter().fold(0, |acc, current| match current {
-                ExecutedMutant {
-                    outcome: ExecutionResult::Skipped,
-                    ..
-                } => acc + 1,
-                _ => acc,
-            });
+            let skipped = count_skipped_mutants(&outcomes);
 
             log::info!(
                 "Skipped {}/{} mutant because of missing code coverage",
@@ -122,7 +99,11 @@ impl<'a> Executor<'a> {
     ) -> Result<Vec<ExecutedMutant>> {
         let mut runtime = WasmerRuntime::new(module, true, self.mapped_dirs)?;
 
-        let limit = self.calculate_execution_cost(&mut runtime)?;
+        let execution_cost = self.calculate_execution_cost(&mut runtime)?;
+
+        log::info!("Original module executed in {execution_cost} cycles");
+        let limit = (execution_cost as f64 * self.timeout_multiplier).ceil() as u64;
+        log::info!("Setting timeout to {limit} cycles");
 
         let pb = ProgressBar::new(locations.len() as u64);
 
@@ -138,8 +119,8 @@ impl<'a> Executor<'a> {
                         if self.coverage && !trace_points.is_covered(location.offset) {
                             return ExecutedMutant {
                                 offset: location.offset,
-                                outcome: ExecutionResult::Skipped,
-                                operator: mutation.operator.clone(),
+                                result: ExecutionResult::Skipped,
+                                mutation_operator: mutation.operator.clone(),
                             };
                         }
 
@@ -155,8 +136,8 @@ impl<'a> Executor<'a> {
 
                         ExecutedMutant {
                             offset: location.offset,
-                            outcome: result,
-                            operator: mutation.operator.clone(),
+                            result,
+                            mutation_operator: mutation.operator.clone(),
                         }
                     })
                     .collect::<Vec<ExecutedMutant>>()
@@ -178,7 +159,11 @@ impl<'a> Executor<'a> {
         let factory = WasmerRuntimeFactory::new(&meta_mutant, true, self.mapped_dirs)?;
 
         let mut runtime = factory.instantiate_mutant(0).unwrap();
-        let limit = self.calculate_execution_cost(&mut runtime)?;
+        let execution_cost = self.calculate_execution_cost(&mut runtime)?;
+
+        log::info!("Original module executed in {execution_cost} cycles");
+        let limit = (execution_cost as f64 * self.timeout_multiplier).ceil() as u64;
+        log::info!("Setting timeout to {limit} cycles");
 
         let pb = ProgressBar::new(locations.len() as u64);
 
@@ -193,8 +178,8 @@ impl<'a> Executor<'a> {
                         if self.coverage && !trace_points.is_covered(location.offset) {
                             return ExecutedMutant {
                                 offset: location.offset,
-                                outcome: ExecutionResult::Skipped,
-                                operator: mutation.operator.clone(),
+                                result: ExecutionResult::Skipped,
+                                mutation_operator: mutation.operator.clone(),
                             };
                         }
 
@@ -208,8 +193,8 @@ impl<'a> Executor<'a> {
 
                         ExecutedMutant {
                             offset: location.offset,
-                            outcome: result,
-                            operator: mutation.operator.clone(),
+                            result,
+                            mutation_operator: mutation.operator.clone(),
                         }
                     })
                     .collect::<Vec<ExecutedMutant>>()
@@ -239,10 +224,8 @@ impl<'a> Executor<'a> {
             ExecutionResult::Error => bail!("Module failed to execute"),
             ExecutionResult::Skipped => panic!("Runtime returned ExecutionResult::Skipped"),
         };
-        log::info!("Original module executed in {execution_cost} cycles");
-        let limit = (execution_cost as f64 * self.timeout_multiplier).ceil() as u64;
-        log::info!("Setting timeout to {limit} cycles");
-        Ok(limit)
+
+        Ok(execution_cost)
     }
 
     fn get_trace_points(&self, module: &WasmModule) -> Result<TracePoints> {
@@ -265,6 +248,17 @@ impl<'a> Executor<'a> {
         };
         Ok(trace_points)
     }
+}
+
+fn count_skipped_mutants(outcomes: &[ExecutedMutant]) -> i32 {
+    let skipped = outcomes.iter().fold(0, |acc, current| match current {
+        ExecutedMutant {
+            result: ExecutionResult::Skipped,
+            ..
+        } => acc + 1,
+        _ => acc,
+    });
+    skipped
 }
 
 #[cfg(test)]
@@ -337,7 +331,7 @@ mod tests {
         assert!(matches!(
             result[0],
             ExecutedMutant {
-                outcome: ExecutionResult::ProcessExit { exit_code: 1, .. },
+                result: ExecutionResult::ProcessExit { exit_code: 1, .. },
                 ..
             }
         ));
@@ -372,7 +366,7 @@ mod tests {
         assert!(matches!(
             result[0],
             ExecutedMutant {
-                outcome: ExecutionResult::Skipped,
+                result: ExecutionResult::Skipped,
                 ..
             }
         ));
@@ -456,7 +450,7 @@ mod tests {
         }
 
         for (a, b) in no_meta_results.iter().zip(&meta_results) {
-            assert_eq!(a.outcome, b.outcome);
+            assert_eq!(a.result, b.result);
         }
     }
 }
