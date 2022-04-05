@@ -103,17 +103,63 @@ impl MutationEngine {
         };
 
         let mutations = module.instruction_walker::<MutationLocation>(callback)?;
+        log::info!("Generated {} mutations", count_mutants(&mutations));
 
-        // TODO: Fix count - we only count MutationLocation, not all Mutations
-        log::info!("Generated {} mutations", mutations.len());
         Ok(mutations)
     }
 }
 
+fn count_mutants(locations: &[MutationLocation]) -> i32 {
+    locations
+        .iter()
+        .fold(0, |acc, loc| acc + loc.mutations.len() as i32)
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::operator::ops::BinaryOperatorMulToDivS;
+
     use super::*;
     use anyhow::Result;
+    use parity_wasm::elements::Instruction;
+
+    #[test]
+    fn test_count_mutants() {
+        assert_eq!(count_mutants(&[]), 0);
+
+        let m = Mutation {
+            id: 1234,
+            operator: Box::new(BinaryOperatorMulToDivS::new(&Instruction::I32Mul).unwrap()),
+        };
+
+        assert_eq!(
+            count_mutants(&[MutationLocation {
+                function_number: 1,
+                statement_number: 1,
+                offset: 1337,
+                mutations: vec![m.clone(); 2],
+            }]),
+            2
+        );
+
+        assert_eq!(
+            count_mutants(&[
+                MutationLocation {
+                    function_number: 1,
+                    statement_number: 1,
+                    offset: 1337,
+                    mutations: vec![m.clone(); 2],
+                },
+                MutationLocation {
+                    function_number: 1,
+                    statement_number: 1,
+                    offset: 1337,
+                    mutations: vec![m; 2],
+                },
+            ]),
+            4
+        );
+    }
 
     #[test]
     fn test_discover_mutation_positions() -> Result<()> {
