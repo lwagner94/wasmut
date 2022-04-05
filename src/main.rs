@@ -22,7 +22,7 @@ use crate::cliarguments::{CLIArguments, CLICommand};
 use colored::*;
 use log::*;
 use reporter::{cli::CLIReporter, html::HTMLReporter, Reporter};
-use std::path::Path;
+use std::{path::Path, time::Instant};
 
 use crate::{
     config::Config, executor::Executor, mutation::MutationEngine, policy::MutationPolicy,
@@ -96,6 +96,8 @@ fn mutate(
     report_type: &Output,
     output_directory: &str,
 ) -> Result<()> {
+    let start = Instant::now();
+
     let module = WasmModule::from_file(wasmfile)?;
     let mutator = MutationEngine::new(config)?;
     let mutations = mutator.discover_mutation_positions(&module)?;
@@ -115,6 +117,9 @@ fn mutate(
             reporter.report(&executed_mutants)?;
         }
     }
+
+    let duration = start.elapsed();
+    log::info!("Execution time  {:?}s", duration.as_secs());
 
     Ok(())
 }
