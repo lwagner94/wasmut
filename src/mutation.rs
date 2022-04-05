@@ -77,18 +77,6 @@ impl MutationEngine {
         // TODO: Refactor so that we do not return a vec?
         let callback: CallbackType<MutationLocation> = &|instruction, location| {
             if self.mutation_policy.check(location.file, location.function) {
-                // registry
-                // .mutants_for_instruction(instruction, &context)
-                // .into_iter()
-                // .map(|operator| Mutation {
-                //     id: id_counter.inc() as i64,
-                //     function_number: location.function_index,
-                //     statement_number: location.instruction_index,
-                //     offset: location.instruction_offset,
-                //     operator,
-                // })
-                // .collect()
-
                 let mutations: Vec<Mutation> = registry
                     .mutants_for_instruction(instruction, &context)
                     .into_iter()

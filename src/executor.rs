@@ -98,6 +98,10 @@ impl<'a> Executor<'a> {
         trace_points: TracePoints,
     ) -> Result<Vec<ExecutedMutant>> {
         let mut runtime = WasmerRuntime::new(module, true, self.mapped_dirs)?;
+        log::info!(
+            "Using the {} compiler for code generation",
+            runtime.compiler()
+        );
 
         let execution_cost = self.calculate_execution_cost(&mut runtime)?;
 
@@ -159,6 +163,11 @@ impl<'a> Executor<'a> {
         let factory = WasmerRuntimeFactory::new(&meta_mutant, true, self.mapped_dirs)?;
 
         let mut runtime = factory.instantiate_mutant(0).unwrap();
+
+        log::info!(
+            "Using the {} compiler for code generation",
+            runtime.compiler()
+        );
         let execution_cost = self.calculate_execution_cost(&mut runtime)?;
 
         log::info!("Original module executed in {execution_cost} cycles");

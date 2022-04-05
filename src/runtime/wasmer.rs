@@ -1,9 +1,10 @@
+use std::fmt::Display;
 use std::sync::{Arc, Mutex};
 
 use crate::{policy::ExecutionPolicy, runtime::ExecutionResult};
 use anyhow::{Context, Result};
 use wasmer::{wasmparser::Operator, Exports, ImportObject, Instance, Module, Store, WasmerEnv};
-use wasmer::{CompilerConfig, Function};
+use wasmer::{CompilerConfig, Cranelift, Function};
 use wasmer_compiler_singlepass::Singlepass;
 use wasmer_engine_universal::Universal;
 use wasmer_middlewares::{
@@ -11,6 +12,21 @@ use wasmer_middlewares::{
     Metering,
 };
 use wasmer_wasi::{Pipe, WasiError, WasiState};
+
+#[derive(Copy, Clone)]
+pub enum Compiler {
+    Singlepass,
+    Cranelift,
+}
+
+impl Display for Compiler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Compiler::Singlepass => write!(f, "Singlepass"),
+            Compiler::Cranelift => write!(f, "Cranelift"),
+        }
+    }
+}
 
 #[derive(WasmerEnv, Clone, Default)]
 struct MutantEnv {
@@ -45,6 +61,7 @@ use super::{TracePoints, WasmModule};
 pub struct WasmerRuntime {
     instance: wasmer::Instance,
     mutant_env: MutantEnv,
+    compiler: Compiler,
 }
 
 impl WasmerRuntime {
@@ -53,7 +70,7 @@ impl WasmerRuntime {
         discard_output: bool,
         map_dirs: &[(String, String)],
     ) -> Result<Self> {
-        let store = create_store();
+        let store = create_store(Compiler::Singlepass);
         let trace_env = MutantEnv::new(0);
 
         let wasmer_module = create_module(module, &store)?;
@@ -65,6 +82,7 @@ impl WasmerRuntime {
             instance: Instance::new(&wasmer_module, &import_object)
                 .context("Failed to create wasmer instance")?,
             mutant_env: trace_env,
+            compiler: Compiler::Singlepass,
         })
     }
 
@@ -73,8 +91,9 @@ impl WasmerRuntime {
         discard_output: bool,
         map_dirs: &[(String, String)],
         mutant_id: i64,
+        compiler: Compiler,
     ) -> Result<Self> {
-        let store = create_store();
+        let store = create_store(compiler);
         let mutant_env = MutantEnv::new(mutant_id);
 
         let wasmer_module = unsafe { Module::deserialize(&store, compiled_code)? };
@@ -87,6 +106,7 @@ impl WasmerRuntime {
             instance: Instance::new(&wasmer_module, &import_object)
                 .context("Failed to create wasmer instance")?,
             mutant_env,
+            compiler,
         })
     }
 
@@ -151,6 +171,10 @@ impl WasmerRuntime {
         let points = self.mutant_env.points.as_ref().lock().unwrap();
         points.clone()
     }
+
+    pub fn compiler(&self) -> Compiler {
+        self.compiler
+    }
 }
 
 pub struct WasmerRuntimeFactory<'a> {
@@ -165,7 +189,7 @@ impl<'a> WasmerRuntimeFactory<'a> {
         discard_output: bool,
         map_dirs: &'a [(String, String)],
     ) -> Result<Self> {
-        let store = create_store();
+        let store = create_store(Compiler::Cranelift);
         let wasmer_module = create_module(module, &store)?;
         let compiled_code = wasmer_module.serialize()?;
 
@@ -182,6 +206,7 @@ impl<'a> WasmerRuntimeFactory<'a> {
             self.discard_output,
             self.map_dirs,
             mutant_id,
+            Compiler::Cranelift,
         )
     }
 }
@@ -201,19 +226,23 @@ fn add_trace_function(store: &Store, import_object: &mut ImportObject, trace_env
     import_object.register("wasmut_api", exports);
 }
 
-fn create_store() -> Store {
+fn create_store(compiler: Compiler) -> Store {
     // Define cost fuction for any executed instruction
     let cost_function = |_: &Operator| -> u64 { 1 };
     let metering = Arc::new(Metering::new(u64::MAX, cost_function));
 
-    // We use the Singlepass compiler, because in general
-    // we expect to have *many* mutants with little execution time
-    // Compared to Cranelift oder LLVM, the Singlepass compiler
-    // is very quick at the cost of increased execution cost of
-    // the module.
-    let mut compiler_config = Singlepass::default();
-    compiler_config.push_middleware(metering);
-    Store::new(&Universal::new(compiler_config).engine())
+    match compiler {
+        Compiler::Singlepass => {
+            let mut compiler_config = Singlepass::default();
+            compiler_config.push_middleware(metering);
+            Store::new(&Universal::new(compiler_config).engine())
+        }
+        Compiler::Cranelift => {
+            let mut compiler_config = Cranelift::default();
+            compiler_config.push_middleware(metering);
+            Store::new(&Universal::new(compiler_config).engine())
+        }
+    }
 }
 
 fn create_module(module: &WasmModule, store: &Store) -> Result<Module> {
@@ -291,6 +320,26 @@ mod tests {
 
         assert!(matches!(result, ExecutionResult::Timeout));
 
+        Ok(())
+    }
+
+    #[test]
+    fn compiler_display() {
+        assert_eq!("Cranelift", format!("{}", Compiler::Cranelift));
+        assert_eq!("Singlepass", format!("{}", Compiler::Singlepass));
+    }
+
+    #[test]
+    fn test_correct_compiler() -> Result<()> {
+        let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
+        let runtime = WasmerRuntime::new(&module, true, &[])?;
+
+        assert!(matches!(runtime.compiler(), Compiler::Singlepass));
+
+        let factory = WasmerRuntimeFactory::new(&module, true, &[])?;
+        let runtime = factory.instantiate_mutant(0)?;
+
+        assert!(matches!(runtime.compiler(), Compiler::Cranelift));
         Ok(())
     }
 }
