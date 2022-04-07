@@ -1,8 +1,7 @@
 use colored::*;
 
 use super::{
-    rewriter::PathRewriter, MutationOutcome, ReportableMutant, Reporter, SyntectContext,
-    SyntectFileContext,
+    rewriter::PathRewriter, MutationOutcome, ReportableMutant, SyntectContext, SyntectFileContext,
 };
 use crate::config::ReportConfig;
 use crate::output;
@@ -19,6 +18,7 @@ impl From<MutationOutcome> for ColoredString {
     fn from(m: MutationOutcome) -> Self {
         match m {
             MutationOutcome::Alive => "ALIVE".red(),
+            MutationOutcome::Skipped => "SKIPPED".red(),
             MutationOutcome::Killed => "KILLED".green(),
             MutationOutcome::Timeout => "TIMEOUT".yellow(),
             MutationOutcome::Error => "ERROR".yellow(),
@@ -45,11 +45,13 @@ impl CLIReporter {
         let acc = super::accumulate_outcomes(executed_mutants);
 
         let alive_str: ColoredString = MutationOutcome::Alive.into();
+        let skipped_str: ColoredString = MutationOutcome::Skipped.into();
         let timeout_str: ColoredString = MutationOutcome::Timeout.into();
         let error_str: ColoredString = MutationOutcome::Error.into();
         let killed_str: ColoredString = MutationOutcome::Killed.into();
 
         log::info!("{0:15} {1}", alive_str, acc.alive);
+        log::info!("{0:15} {1}", skipped_str, acc.skipped);
         log::info!("{0:15} {1}", timeout_str, acc.timeout);
         log::info!("{0:15} {1}", error_str, acc.error);
         log::info!("{0:15} {1}", killed_str, acc.killed);
@@ -139,10 +141,8 @@ impl CLIReporter {
 
         bail!("Could not read line {line_nr} from file {file}");
     }
-}
 
-impl Reporter for CLIReporter {
-    fn report(&self, executed_mutants: &[ReportableMutant]) -> Result<()> {
+    pub fn report(&self, executed_mutants: &[ReportableMutant]) -> Result<()> {
         self.enumerate_mutants(executed_mutants)?;
         self.summary(executed_mutants);
         Ok(())

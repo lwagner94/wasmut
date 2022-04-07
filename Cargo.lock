@@ -2183,6 +2183,7 @@ dependencies = [
  "rayon",
  "regex",
  "serde",
+ "serde_json",
  "syntect",
  "tempfile",
  "toml",

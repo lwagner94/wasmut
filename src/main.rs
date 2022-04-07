@@ -18,10 +18,13 @@ use anyhow::{bail, Context, Result};
 use cliarguments::Output;
 use operator::OperatorRegistry;
 
-use crate::cliarguments::{CLIArguments, CLICommand};
+use crate::{
+    cliarguments::{CLIArguments, CLICommand},
+    reporter::json::JSONReporter,
+};
 use colored::*;
 use log::*;
-use reporter::{cli::CLIReporter, html::HTMLReporter, Reporter};
+use reporter::{cli::CLIReporter, html::HTMLReporter};
 use std::{path::Path, time::Instant};
 
 use crate::{
@@ -107,6 +110,8 @@ fn mutate(
 
     let executed_mutants = reporter::prepare_results(&module, results)?;
 
+    let duration = start.elapsed();
+
     match report_type {
         Output::Console => {
             let reporter = CLIReporter::new(config.report())?;
@@ -116,9 +121,12 @@ fn mutate(
             let reporter = HTMLReporter::new(config.report(), Path::new(output_directory))?;
             reporter.report(&executed_mutants)?;
         }
+        Output::Json => {
+            let reporter = JSONReporter::new(config.report(), wasmfile, &duration)?;
+            reporter.report(&executed_mutants)?;
+        }
     }
 
-    let duration = start.elapsed();
     log::info!("Execution time  {:?}s", duration.as_secs());
 
     Ok(())
@@ -282,6 +290,8 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    use crate::reporter::json::JSONReport;
+
     use super::*;
 
     #[test]
@@ -330,9 +340,25 @@ mod tests {
             module_path.to_str().unwrap(),
         ]);
         let result = run_main(args);
-        // dbg!(&result);
+
         assert!(result.is_ok());
         assert!(output_dir.path().join("index.html").exists());
+
+        let args = CLIArguments::parse_args_from(vec![
+            "wasmut",
+            "mutate",
+            "-C",
+            "-r",
+            "json",
+            module_path.to_str().unwrap(),
+        ]);
+        let result = run_main(args);
+        assert!(result.is_ok());
+
+        let json_report: JSONReport = serde_json::from_str(&output::get_output()).unwrap();
+
+        output::clear_output();
+        assert_eq!(module_path.to_str().unwrap(), json_report.file);
     }
 
     #[test]

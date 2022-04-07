@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod html;
+pub mod json;
 mod rewriter;
 
 use std::{
@@ -35,6 +36,7 @@ pub enum MutationOutcome {
     Killed,
     Timeout,
     Error,
+    Skipped,
 }
 
 impl From<ExecutionResult> for MutationOutcome {
@@ -49,7 +51,7 @@ impl From<ExecutionResult> for MutationOutcome {
             }
             ExecutionResult::Timeout => MutationOutcome::Timeout,
             ExecutionResult::Error => MutationOutcome::Error,
-            ExecutionResult::Skipped => MutationOutcome::Alive,
+            ExecutionResult::Skipped => MutationOutcome::Skipped,
         }
     }
 }
@@ -79,9 +81,9 @@ pub fn prepare_results(
         .collect())
 }
 
-pub trait Reporter {
-    fn report(&self, executed_mutants: &[ReportableMutant]) -> Result<()>;
-}
+// pub trait Reporter {
+//     fn report(&self, executed_mutants: &[ReportableMutant]) -> Result<()>;
+// }
 
 type LineNumberMutantMap<'a> = BTreeMap<u64, Vec<&'a ReportableMutant>>;
 type FileMutantMap<'a> = BTreeMap<String, LineNumberMutantMap<'a>>;
@@ -124,6 +126,7 @@ pub struct AccumulatedOutcomes {
     pub timeout: i32,
     pub killed: i32,
     pub error: i32,
+    pub skipped: i32,
     pub mutation_score: f32,
 }
 
@@ -136,17 +139,19 @@ impl AsRef<ReportableMutant> for ReportableMutant {
 pub fn accumulate_outcomes<E: AsRef<ReportableMutant>>(
     executed_mutants: &[E],
 ) -> AccumulatedOutcomes {
-    let (alive, timeout, killed, error) = executed_mutants.iter().map(|e| e.as_ref()).fold(
-        (0, 0, 0, 0),
-        |(alive, timeout, killed, error), outcome| match outcome.outcome {
-            MutationOutcome::Alive => (alive + 1, timeout, killed, error),
-            MutationOutcome::Killed => (alive, timeout, killed + 1, error),
-            MutationOutcome::Timeout => (alive, timeout + 1, killed, error),
-            MutationOutcome::Error => (alive, timeout, killed, error + 1),
-        },
-    );
-    let mutation_score =
-        100f32 * (timeout + killed + error) as f32 / (alive + timeout + killed + error) as f32;
+    let (alive, timeout, killed, error, skipped) =
+        executed_mutants.iter().map(|e| e.as_ref()).fold(
+            (0, 0, 0, 0, 0),
+            |(alive, timeout, killed, error, skipped), outcome| match outcome.outcome {
+                MutationOutcome::Alive => (alive + 1, timeout, killed, error, skipped),
+                MutationOutcome::Killed => (alive, timeout, killed + 1, error, skipped),
+                MutationOutcome::Timeout => (alive, timeout + 1, killed, error, skipped),
+                MutationOutcome::Error => (alive, timeout, killed, error + 1, skipped),
+                MutationOutcome::Skipped => (alive, timeout, killed, error, skipped + 1),
+            },
+        );
+    let mutation_score = 100f32 * (timeout + killed + error) as f32
+        / (alive + timeout + killed + error + skipped) as f32;
 
     AccumulatedOutcomes {
         total: executed_mutants.len() as i32,
@@ -154,6 +159,7 @@ pub fn accumulate_outcomes<E: AsRef<ReportableMutant>>(
         timeout,
         killed,
         error,
+        skipped,
         mutation_score,
     }
 }
@@ -327,6 +333,6 @@ mod tests {
         assert!(results[1].outcome == MutationOutcome::Killed);
         assert!(results[2].outcome == MutationOutcome::Timeout);
         assert!(results[3].outcome == MutationOutcome::Error);
-        assert!(results[4].outcome == MutationOutcome::Alive);
+        assert!(results[4].outcome == MutationOutcome::Skipped);
     }
 }

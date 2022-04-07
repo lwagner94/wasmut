@@ -29,6 +29,10 @@ macro_rules! common_functions {
                 self.new_instruction()
             )
         }
+
+        fn dyn_name(&self) -> &'static str {
+            Self::name()
+        }
     };
 }
 
