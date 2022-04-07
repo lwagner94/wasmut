@@ -2158,7 +2158,7 @@ checksum = "52144d4c78e5cf8b055ceab8e5fa22814ce4315d6002ad32cfd914f37c12fd65"
 
 [[package]]
 name = "wasmut"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "addr2line",
  "anyhow",
@@ -2183,6 +2183,7 @@ dependencies = [
  "rayon",
  "regex",
  "serde",
+ "serde_json",
  "syntect",
  "tempfile",
  "toml",

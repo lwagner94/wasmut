@@ -35,6 +35,8 @@ pub trait InstructionReplacement: Send + Sync + std::fmt::Debug + DynClone {
     where
         Self: Sized + 'static;
 
+    fn dyn_name(&self) -> &'static str;
+
     fn factory() -> fn(&Instruction, &InstructionContext) -> Option<Box<dyn InstructionReplacement>>
     where
         Self: Sized + Send + Sync + 'static;

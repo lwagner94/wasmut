@@ -14,13 +14,14 @@ use crate::{config::ReportConfig, templates};
 
 use super::{
     rewriter::PathRewriter, AccumulatedOutcomes, LineNumberMutantMap, MutationOutcome,
-    ReportableMutant, Reporter,
+    ReportableMutant,
 };
 
 impl From<MutationOutcome> for String {
     /// Convert `MutationOutcome` to `String`
     fn from(m: MutationOutcome) -> Self {
         match m {
+            MutationOutcome::Skipped => "SKIPPED".into(),
             MutationOutcome::Alive => "ALIVE".into(),
             MutationOutcome::Killed => "KILLED".into(),
             MutationOutcome::Timeout => "TIMEOUT".into(),
@@ -86,8 +87,22 @@ pub struct HTMLReporter<'a> {
     path_rewriter: Option<PathRewriter>,
 }
 
-impl<'a> Reporter for HTMLReporter<'a> {
-    fn report(&self, executed_mutants: &[super::ReportableMutant]) -> Result<()> {
+impl<'a> HTMLReporter<'a> {
+    pub fn new(config: &ReportConfig, output_directory: &'a Path) -> Result<Self> {
+        let path_rewriter = if let Some((regex, replacement)) = &config.path_rewrite() {
+            Some(PathRewriter::new(regex, replacement)?)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            output_directory,
+            syntax_set: SyntaxSet::load_defaults_newlines(),
+            path_rewriter,
+        })
+    }
+
+    pub fn report(&self, executed_mutants: &[super::ReportableMutant]) -> Result<()> {
         // Prepare output directory
         self.create_output_directory()?;
         self.create_static_files()?;
@@ -111,22 +126,6 @@ impl<'a> Reporter for HTMLReporter<'a> {
         )?;
 
         Ok(())
-    }
-}
-
-impl<'a> HTMLReporter<'a> {
-    pub fn new(config: &ReportConfig, output_directory: &'a Path) -> Result<Self> {
-        let path_rewriter = if let Some((regex, replacement)) = &config.path_rewrite() {
-            Some(PathRewriter::new(regex, replacement)?)
-        } else {
-            None
-        };
-
-        Ok(Self {
-            output_directory,
-            syntax_set: SyntaxSet::load_defaults_newlines(),
-            path_rewriter,
-        })
     }
 
     /// Instantiate Syntext HTML generator instance

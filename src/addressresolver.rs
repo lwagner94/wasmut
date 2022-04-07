@@ -1,13 +1,14 @@
 use addr2line::Context;
 use gimli::{EndianRcSlice, SectionId};
 use object::{Object, ObjectSection, SymbolMap, SymbolMapName};
+use serde::Serialize;
 use std::{borrow::Cow, rc::Rc};
 
 // Partly based on https://github.com/gimli-rs/addr2line/blob/master/examples/addr2line.rs
 // Licensed under the MIT license, retrived on 2021-12-23
 // Copyright (c) 2016-2018 The gimli Developers
 
-#[derive(Debug, Default, PartialEq, Clone)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize)]
 pub struct CodeLocation {
     pub file: Option<String>,
     pub function: Option<String>,

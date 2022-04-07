@@ -117,6 +117,7 @@ pub enum CLICommand {
 pub enum Output {
     Console,
     Html,
+    Json,
 }
 
 impl CLIArguments {
