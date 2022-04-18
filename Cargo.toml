@@ -1,6 +1,6 @@
 [package]
 name = "wasmut"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 description = "Mutation testing tool for WebAssembly/WASI modules"
 authors = ["Lukas Wagner <lwagner94@posteo.at>"]
