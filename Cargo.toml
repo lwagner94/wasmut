@@ -45,7 +45,7 @@ log = "0.4.0"
 env_logger = "0.9.0"
 num_cpus = "1.13.1"
 indicatif = {version = "0.16.2", features = ["rayon"]}
-rand = "0.8.4"
+rand = "0.8.5"
 syntect = "4.6.0"
 handlebars = "4.2.0"
 md5 = "0.7.0"

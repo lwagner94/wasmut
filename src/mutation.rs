@@ -6,6 +6,7 @@ use crate::{config::Config, policy::MutationPolicy, wasmmodule::WasmModule};
 use anyhow::Result;
 use atomic_counter::AtomicCounter;
 use atomic_counter::RelaxedCounter;
+use rand::distributions::{Distribution, Uniform};
 
 /// Definition of a position where and how a module is mutated.
 #[derive(Debug, Clone)]
@@ -41,14 +42,18 @@ pub struct MutationEngine {
 
     /// A list of all operators that are to be enabled.
     enabled_operators: Vec<String>,
+
+    /// Percentage of mutants that are to be executed
+    sample_threshold: i32,
 }
 
 impl MutationEngine {
     /// Create a new `MutationEngine`, based on a configuration.
-    pub fn new(config: &Config) -> Result<Self> {
+    pub fn new(config: &Config, sample_threshold: i32) -> Result<Self> {
         Ok(Self {
             mutation_policy: MutationPolicy::from_config(config)?,
             enabled_operators: config.operators().enabled_operators(),
+            sample_threshold,
         })
     }
 
@@ -80,6 +85,12 @@ impl MutationEngine {
                 let mutations: Vec<Mutation> = registry
                     .mutants_for_instruction(instruction, &context)
                     .into_iter()
+                    .filter(|_| {
+                        let mut rng = rand::thread_rng();
+                        let die = Uniform::from(0..=100i32);
+                        let roll = die.sample(&mut rng);
+                        roll <= self.sample_threshold
+                    })
                     .map(|operator| Mutation {
                         id: id_counter.inc() as i64,
                         operator,
@@ -166,7 +177,7 @@ mod tests {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
 
         let config = Config::default();
-        let engine = MutationEngine::new(&config)?;
+        let engine = MutationEngine::new(&config, 100)?;
         let positions = engine.discover_mutation_positions(&module).unwrap();
 
         assert!(!positions.is_empty());
@@ -177,7 +188,7 @@ mod tests {
     fn test_mutation() -> Result<()> {
         let module = WasmModule::from_file("testdata/simple_add/test.wasm")?;
         let config = Config::default();
-        let engine = MutationEngine::new(&config)?;
+        let engine = MutationEngine::new(&config, 100)?;
 
         let locations = engine.discover_mutation_positions(&module).unwrap();
         dbg!(&locations);
@@ -196,13 +207,32 @@ mod tests {
         fn check_number_of_mutants(config: &str) -> usize {
             let module = WasmModule::from_file("testdata/count_words/test.wasm").unwrap();
             let config = Config::parse_file(format!("testdata/count_words/{config}")).unwrap();
-            let engine = MutationEngine::new(&config).unwrap();
+            let engine = MutationEngine::new(&config, 100).unwrap();
             engine.discover_mutation_positions(&module).unwrap().len()
         }
 
         assert_eq!(check_number_of_mutants("wasmut_call.toml"), 7);
         assert_eq!(check_number_of_mutants("wasmut_relops.toml"), 1);
         assert_eq!(check_number_of_mutants("wasmut.toml"), 23);
+        Ok(())
+    }
+
+    #[test]
+    fn test_sample_threshold() -> Result<()> {
+        fn check_number_of_mutants(threshold: i32) -> usize {
+            let module = WasmModule::from_file("testdata/count_words/test.wasm").unwrap();
+            let config = Config::parse_file("testdata/count_words/wasmut.toml").unwrap();
+            let engine = MutationEngine::new(&config, threshold).unwrap();
+            engine.discover_mutation_positions(&module).unwrap().len()
+        }
+
+        assert_eq!(check_number_of_mutants(100), 23);
+
+        // There is a extremely low probability that this might fail...
+        // but I don't really see a way to test this without having
+        // a seedable RNG - and this requires a bit of refactoring
+        // TODO !
+        assert!(check_number_of_mutants(50) < 23);
         Ok(())
     }
 }

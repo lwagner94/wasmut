@@ -98,11 +98,12 @@ fn mutate(
     config: &Config,
     report_type: &Output,
     output_directory: &str,
+    sample_threshold: i32,
 ) -> Result<()> {
     let start = Instant::now();
 
     let module = WasmModule::from_file(wasmfile)?;
-    let mutator = MutationEngine::new(config)?;
+    let mutator = MutationEngine::new(config, sample_threshold)?;
     let mutations = mutator.discover_mutation_positions(&module)?;
 
     let executor = Executor::new(config);
@@ -234,12 +235,13 @@ fn run_main(cli: CLIArguments) -> Result<()> {
             wasmfile,
             threads,
             config_samedir,
+            sample_threshold,
             report,
             output,
         } => {
             let config = load_config(config.as_deref(), Some(&wasmfile), config_samedir)?;
             init_rayon(threads);
-            mutate(&wasmfile, &config, &report, &output)?;
+            mutate(&wasmfile, &config, &report, &output, sample_threshold)?;
         }
         CLICommand::NewConfig { path } => {
             new_config(path)?;

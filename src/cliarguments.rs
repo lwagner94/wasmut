@@ -70,6 +70,10 @@ pub enum CLICommand {
         #[clap(short, long, default_value = "wasmut-report")]
         output: String,
 
+        /// The percentage of all mutants which should be executed
+        #[clap(short, long, default_value_t = 100)]
+        sample_threshold: i32,
+
         /// Path to the wasm module
         wasmfile: String,
     },
