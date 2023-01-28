@@ -24,7 +24,7 @@ the [releases pages](https://github.com/lwagner94/wasmut/releases) of this repos
 
 ### Installation using Cargo
 `wasmut` is implemented in Rust, thus you need the Rust toolchain to compile the
-project. The *minimum supported Rust version (MSRV)* is 1.58.
+project. The *minimum supported Rust version (MSRV)* is 1.67.
 
 To install `wasmut` the latest development version of `wasmut`, clone
 the git repository and use the `cargo install` command.
