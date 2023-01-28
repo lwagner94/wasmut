@@ -11,10 +11,9 @@ jobs:
           - macos-latest
           - ubuntu-latest
           - windows-latest
-        rust: 
+        rust:
           - stable
-        
-        include: 
+        include:
           - os: ubuntu-latest
             rust: 1.58.0
     steps:
@@ -26,7 +25,6 @@ jobs:
           profile: minimal
           toolchain: ${{ matrix.rust }}
           override: true
-      - uses: Swatinem/rust-cache@v1
       - uses: actions-rs/cargo@v1
         with:
           command: test
