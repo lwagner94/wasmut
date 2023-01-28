@@ -20,41 +20,42 @@ coveralls = { repository = "lwagner94/wasmut", branch = "main", service = "githu
 maintenance = { status = "actively-developed" }
 
 [dependencies]
-rayon = "1.5.1"
+rayon = "1.6.1"
 
-wasmer = { version = "2.1.1"}
-wasmer-compiler-singlepass = {version = "2.1.1"}
-wasmer-engine-universal = {version = "2.1.1"}
-wasmer-wasi = {version = "2.1.1"}
-wasmer-middlewares = {version = "2.1.1"}
+# TODO
+wasmer = { version = "2.3"}
+wasmer-compiler-singlepass = {version = "2.3"}
+wasmer-engine-universal = {version = "2.3"}
+wasmer-wasi = {version = "2.3"}
+wasmer-middlewares = {version = "2.3"}
 
 # TODO: Maybe upstream my changes?
 parity-wasm = { git = "https://github.com/lwagner94/parity-wasm", branch="instruction-offsets-rework", features=["std", "offsets"] }
 
-anyhow = "1.0.51"
-regex = "1.0.2"
-clap = {version = "3.0.0", features=["cargo", "derive"]}
-object = { version = "0.28.1", features = ["read", "wasm"]}
-addr2line = "0.17.0"
-gimli = "0.26.1"
-toml = "0.5.0"
+anyhow = "1.0"
+regex = "1.7"
+clap = {version = "3.0", features=["cargo", "derive"]} # TODO
+object = { version = "0.30", features = ["read", "wasm"]}
+addr2line = "0.19"
+gimli = "0.27"
+toml = "0.7"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.0"
-colored = "2.0.0"
-log = "0.4.0"
-env_logger = "0.9.0"
-num_cpus = "1.13.1"
-indicatif = {version = "0.16.2", features = ["rayon"]}
-rand = "0.8.5"
-syntect = "4.6.0"
-handlebars = "4.2.0"
-md5 = "0.7.0"
-concat-idents = "1.1.3"
-chrono = "0.4.19"
-atomic-counter = "1.0.1"
-dyn-clone = "1.0.4"
+serde_json = "1.0"
+colored = "2.0"
+log = "0.4"
+env_logger = "0.10"
+num_cpus = "1.15"
+indicatif = {version = "0.17", features = ["rayon"]}
+rand = "0.8"
+syntect = "4.6.0" # TODO
+handlebars = "4.3"
+md5 = "0.7"
+concat-idents = "1.1"
+chrono = "0.4"
+atomic-counter = "1.0"
+dyn-clone = "1.0"
 
 [dev-dependencies]
-tempfile = "3.3.0"
-quickcheck = "1.0.3"
-pretty_assertions = "1.0.3"
+tempfile = "3.3"
+quickcheck = "1.0"
+pretty_assertions = "1.3"
