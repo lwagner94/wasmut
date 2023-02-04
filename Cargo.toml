@@ -23,11 +23,11 @@ maintenance = { status = "actively-developed" }
 rayon = "1.6.1"
 
 # TODO
-wasmer = { version = "2.3"}
-wasmer-compiler-singlepass = {version = "2.3"}
-wasmer-engine-universal = {version = "2.3"}
-wasmer-wasi = {version = "2.3"}
-wasmer-middlewares = {version = "2.3"}
+wasmer = { version = "3.1"}
+wasmer-compiler-singlepass = {version = "3.1"}
+# wasmer-engine-universal = {version = "3.1"}
+wasmer-wasi = {version = "3.1"}
+wasmer-middlewares = {version = "3.1"}
 
 # TODO: Maybe upstream my changes?
 parity-wasm = { git = "https://github.com/lwagner94/parity-wasm", branch="instruction-offsets-rework", features=["std", "offsets"] }

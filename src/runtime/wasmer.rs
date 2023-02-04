@@ -3,15 +3,17 @@ use std::sync::{Arc, Mutex};
 
 use crate::{policy::ExecutionPolicy, runtime::ExecutionResult};
 use anyhow::{Context, Result};
-use wasmer::{wasmparser::Operator, Exports, ImportObject, Instance, Module, Store, WasmerEnv};
-use wasmer::{CompilerConfig, Cranelift, Function};
+use wasmer::{wasmparser::Operator, Exports, Instance, Module, Store};
+use wasmer::{
+    CompilerConfig, Cranelift, Engine, Features, Function, FunctionEnv, FunctionEnvMut, Imports,
+    Target,
+};
 use wasmer_compiler_singlepass::Singlepass;
-use wasmer_engine_universal::Universal;
 use wasmer_middlewares::{
     metering::{get_remaining_points, set_remaining_points, MeteringPoints},
     Metering,
 };
-use wasmer_wasi::{Pipe, WasiError, WasiState};
+use wasmer_wasi::{Pipe, WasiError, WasiFunctionEnv, WasiState};
 
 #[derive(Copy, Clone)]
 pub enum Compiler {
@@ -28,7 +30,7 @@ impl Display for Compiler {
     }
 }
 
-#[derive(WasmerEnv, Clone, Default)]
+#[derive(Clone, Default)]
 struct MutantEnv {
     points: Arc<Mutex<TracePoints>>,
     activated_mutant_id: i64,
@@ -43,12 +45,14 @@ impl MutantEnv {
     }
 }
 
-fn trace(env: &MutantEnv, address: i64) {
+fn trace(mut env: FunctionEnvMut<MutantEnv>, address: i64) {
+    let env = env.data_mut();
     let mut vec = env.points.lock().unwrap();
     vec.add_point(address as u64);
 }
 
-fn check_mutant_id(env: &MutantEnv, mutant_id: i64) -> i32 {
+fn check_mutant_id(env: FunctionEnvMut<MutantEnv>, mutant_id: i64) -> i32 {
+    let env = env.data();
     if env.activated_mutant_id == mutant_id {
         1
     } else {
@@ -59,7 +63,8 @@ fn check_mutant_id(env: &MutantEnv, mutant_id: i64) -> i32 {
 use super::{TracePoints, WasmModule};
 
 pub struct WasmerRuntime {
-    instance: wasmer::Instance,
+    instance: Instance,
+    store: Store,
     mutant_env: MutantEnv,
     compiler: Compiler,
 }
@@ -70,17 +75,25 @@ impl WasmerRuntime {
         discard_output: bool,
         map_dirs: &[(String, String)],
     ) -> Result<Self> {
-        let store = create_store(Compiler::Singlepass);
+        let mut store = create_store(Compiler::Singlepass);
         let trace_env = MutantEnv::new(0);
 
         let wasmer_module = create_module(module, &store)?;
-        let mut import_object =
-            create_wasi_import_object(discard_output, map_dirs, &wasmer_module)?;
-        add_trace_function(&store, &mut import_object, &trace_env);
+        let mut wasi_env = create_wasi_env(&mut store, discard_output, map_dirs)?;
+        let mut imports = wasi_env
+            .import_object(&mut store, &wasmer_module)
+            .context("Failed to create import object")?;
+        add_trace_function(&mut store, &mut imports, &trace_env);
+        let instance = Instance::new(&mut store, &wasmer_module, &imports)
+            .context("Failed to create wasmer instance")?;
+
+        wasi_env
+            .initialize(&mut store, &instance)
+            .context("Could not initialize WASI env")?;
 
         Ok(WasmerRuntime {
-            instance: Instance::new(&wasmer_module, &import_object)
-                .context("Failed to create wasmer instance")?,
+            instance,
+            store,
             mutant_env: trace_env,
             compiler: Compiler::Singlepass,
         })
@@ -93,18 +106,27 @@ impl WasmerRuntime {
         mutant_id: i64,
         compiler: Compiler,
     ) -> Result<Self> {
-        let store = create_store(compiler);
+        let mut store = create_store(compiler);
         let mutant_env = MutantEnv::new(mutant_id);
 
         let wasmer_module = unsafe { Module::deserialize(&store, compiled_code)? };
 
-        let mut import_object =
-            create_wasi_import_object(discard_output, map_dirs, &wasmer_module)?;
-        add_trace_function(&store, &mut import_object, &mutant_env);
+        let mut wasi_env = create_wasi_env(&mut store, discard_output, map_dirs)?;
+        let mut imports = wasi_env
+            .import_object(&mut store, &wasmer_module)
+            .context("Failed to create import object")?;
+        add_trace_function(&mut store, &mut imports, &mutant_env);
+
+        let instance = Instance::new(&mut store, &wasmer_module, &imports)
+            .context("Failed to create wasmer instance")?;
+
+        wasi_env
+            .initialize(&mut store, &instance)
+            .context("Could not initialize WASI env")?;
 
         Ok(WasmerRuntime {
-            instance: Instance::new(&wasmer_module, &import_object)
-                .context("Failed to create wasmer instance")?,
+            instance,
+            store,
             mutant_env,
             compiler,
         })
@@ -116,22 +138,22 @@ impl WasmerRuntime {
             ExecutionPolicy::RunUntilReturn => u64::MAX,
         };
 
-        set_remaining_points(&self.instance, execution_limit);
+        set_remaining_points(&mut self.store, &self.instance, execution_limit);
 
         let func = self
             .instance
             .exports
             .get_function("_start")
             .context("Failed to resolve _start function")?
-            .native::<(), ()>()
+            .typed::<(), ()>(&mut self.store)
             .context("Failed to get native _start function")?;
 
-        let result = func.call().map(|_| 0);
+        let result = func.call(&mut self.store).map(|_| 0);
 
         match result {
             Ok(result) => {
                 let execution_cost = if let MeteringPoints::Remaining(remaining) =
-                    get_remaining_points(&self.instance)
+                    get_remaining_points(&mut self.store, &self.instance)
                 {
                     execution_limit - remaining
                 } else {
@@ -144,7 +166,7 @@ impl WasmerRuntime {
                     execution_cost,
                 })
             }
-            Err(e) => match get_remaining_points(&self.instance) {
+            Err(e) => match get_remaining_points(&mut self.store, &self.instance) {
                 MeteringPoints::Exhausted => Ok(ExecutionResult::Timeout),
                 MeteringPoints::Remaining(remaining) => {
                     if let Ok(wasi_err) = e.downcast() {
@@ -191,7 +213,7 @@ impl<'a> WasmerRuntimeFactory<'a> {
     ) -> Result<Self> {
         let store = create_store(Compiler::Cranelift);
         let wasmer_module = create_module(module, &store)?;
-        let compiled_code = wasmer_module.serialize()?;
+        let compiled_code = wasmer_module.serialize()?.to_vec();
 
         Ok(Self {
             compiled_code,
@@ -211,19 +233,23 @@ impl<'a> WasmerRuntimeFactory<'a> {
     }
 }
 
-fn add_trace_function(store: &Store, import_object: &mut ImportObject, trace_env: &MutantEnv) {
+fn add_trace_function(store: &mut Store, import_object: &mut Imports, trace_env: &MutantEnv) {
     let mut exports = Exports::new();
+
+    let trace_function_env = FunctionEnv::new(store, trace_env.clone());
+    let check_mutant_id_env = FunctionEnv::new(store, trace_env.clone());
 
     exports.insert(
         "__wasmut_trace",
-        Function::new_native_with_env(store, trace_env.clone(), trace),
+        Function::new_typed_with_env(store, &trace_function_env, trace),
     );
 
     exports.insert(
         "__wasmut_check_mutant_id",
-        Function::new_native_with_env(store, trace_env.clone(), check_mutant_id),
+        Function::new_typed_with_env(store, &check_mutant_id_env, check_mutant_id),
     );
-    import_object.register("wasmut_api", exports);
+
+    import_object.register_namespace("wasmut_api", exports);
 }
 
 fn create_store(compiler: Compiler) -> Store {
@@ -231,18 +257,15 @@ fn create_store(compiler: Compiler) -> Store {
     let cost_function = |_: &Operator| -> u64 { 1 };
     let metering = Arc::new(Metering::new(u64::MAX, cost_function));
 
-    match compiler {
-        Compiler::Singlepass => {
-            let mut compiler_config = Singlepass::default();
-            compiler_config.push_middleware(metering);
-            Store::new(&Universal::new(compiler_config).engine())
-        }
-        Compiler::Cranelift => {
-            let mut compiler_config = Cranelift::default();
-            compiler_config.push_middleware(metering);
-            Store::new(&Universal::new(compiler_config).engine())
-        }
-    }
+    let mut compiler_config: Box<dyn CompilerConfig> = match compiler {
+        Compiler::Singlepass => Box::new(Singlepass::default()),
+        Compiler::Cranelift => Box::new(Cranelift::default()),
+    };
+
+    compiler_config.push_middleware(metering);
+    let engine = Engine::new(compiler_config, Target::default(), Features::default());
+
+    Store::new(engine)
 }
 
 fn create_module(module: &WasmModule, store: &Store) -> Result<Module> {
@@ -252,11 +275,11 @@ fn create_module(module: &WasmModule, store: &Store) -> Result<Module> {
     Ok(module)
 }
 
-fn create_wasi_import_object(
+fn create_wasi_env(
+    store: &mut Store,
     discard_output: bool,
     map_dirs: &[(String, String)],
-    module: &Module,
-) -> Result<ImportObject> {
+) -> Result<WasiFunctionEnv> {
     let mut state_builder = WasiState::new("command-name");
 
     // If the discard_output parameter is set, we discard any outputs of the module
@@ -273,15 +296,11 @@ fn create_wasi_import_object(
             .with_context(|| format!("Could not map {} to {}", mapped_dir.0, mapped_dir.1))?;
     }
 
-    let mut wasi_env = state_builder
-        .finalize()
+    let wasi_env = state_builder
+        .finalize(store)
         .context("Failed to create wasmer-wasi env")?;
 
-    let import_object = wasi_env
-        .import_object(module)
-        .context("Failed to create import object")?;
-
-    Ok(import_object)
+    Ok(wasi_env)
 }
 
 #[cfg(test)]
