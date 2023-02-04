@@ -4,7 +4,7 @@ use crate::{
     addressresolver::AddressResolver,
     mutation::{Mutation, MutationLocation},
 };
-use parity_wasm::elements::{
+use wasmut_wasm::elements::{
     External, FunctionType, GlobalEntry, GlobalSection, GlobalType, ImportEntry, InitExpr,
     Instruction, Internal, Module, Section, TableElementType, Type, ValueType,
 };
@@ -43,7 +43,7 @@ pub enum CallRemovalCandidate {
 /// WasmModule represents a (parsed) WebAssembly module
 #[derive(Clone)]
 pub struct WasmModule<'a> {
-    module: parity_wasm::elements::Module,
+    module: wasmut_wasm::elements::Module,
     path: Cow<'a, str>,
 }
 
@@ -52,7 +52,7 @@ impl<'a> WasmModule<'a> {
     pub fn from_file(path: &str) -> Result<WasmModule> {
         // let p: Cow<'_, str> = Cow::Owned(path.to_string());
 
-        let module: Module = parity_wasm::elements::deserialize_file(path)
+        let module: Module = wasmut_wasm::elements::deserialize_file(path)
             .context("Bytecode deserialization failed")?;
 
         if !module.has_names_section() {
@@ -213,7 +213,7 @@ impl<'a> WasmModule<'a> {
     }
 
     /// Get reference to global section, or create it if it does not exist.
-    fn get_or_create_global_section(&mut self) -> &mut parity_wasm::elements::GlobalSection {
+    fn get_or_create_global_section(&mut self) -> &mut wasmut_wasm::elements::GlobalSection {
         if self.module.global_section_mut().is_none() {
             let sections = self.module.sections_mut();
             sections.push(Section::Global(GlobalSection::default()));
@@ -505,7 +505,7 @@ impl<'a> WasmModule<'a> {
     /// Debug information that may have been present in the original module
     /// is discarded.
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        parity_wasm::serialize(self.module.clone()).context("Failed to serialize module")
+        wasmut_wasm::serialize(self.module.clone()).context("Failed to serialize module")
     }
 
     /// Create a clone and apply a mutation
@@ -669,7 +669,7 @@ mod tests {
 
     use super::*;
     use anyhow::Result;
-    use parity_wasm::elements::BlockType;
+    use wasmut_wasm::elements::BlockType;
 
     #[test]
     fn parameter_save_restore() {

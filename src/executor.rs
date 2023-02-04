@@ -273,7 +273,7 @@ fn count_skipped_mutants(outcomes: &[ExecutedMutant]) -> i32 {
 #[cfg(test)]
 mod tests {
 
-    use parity_wasm::elements::Instruction;
+    use wasmut_wasm::elements::Instruction;
 
     use crate::{
         mutation::Mutation,

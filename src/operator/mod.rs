@@ -4,8 +4,8 @@ use anyhow::Result;
 use dyn_clone::DynClone;
 use ops::*;
 #[allow(unused_imports)]
-use parity_wasm::elements::Instruction::{self, *};
-use parity_wasm::elements::{BlockType, ValueType};
+use wasmut_wasm::elements::Instruction::{self, *};
+use wasmut_wasm::elements::{BlockType, ValueType};
 
 use crate::wasmmodule::CallRemovalCandidate;
 
@@ -174,7 +174,7 @@ mod tests {
 
     use super::*;
     use concat_idents::concat_idents;
-    use parity_wasm::elements::ValueType;
+    use wasmut_wasm::elements::ValueType;
 
     macro_rules! generate_test {
         ($operator:ident, $original:ident, $replacement:ident, $block_type:expr) => {

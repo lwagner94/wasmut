@@ -154,7 +154,7 @@ mod tests {
     use crate::{
         addressresolver::CodeLocation, config::Config, operator::ops::BinaryOperatorAddToSub,
     };
-    use parity_wasm::elements::Instruction;
+    use wasmut_wasm::elements::Instruction;
 
     use super::*;
     #[test]

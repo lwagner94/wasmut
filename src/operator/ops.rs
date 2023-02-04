@@ -1,6 +1,6 @@
 use crate::wasmmodule::CallRemovalCandidate;
-use parity_wasm::elements::Instruction::{self, *};
-use parity_wasm::elements::{BlockType, ValueType};
+use wasmut_wasm::elements::Instruction::{self, *};
+use wasmut_wasm::elements::{BlockType, ValueType};
 
 use super::{InstructionContext, InstructionReplacement};
 

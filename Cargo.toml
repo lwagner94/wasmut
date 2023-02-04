@@ -27,8 +27,7 @@ wasmer-compiler-singlepass = {version = "3.1"}
 wasmer-wasi = {version = "3.1"}
 wasmer-middlewares = {version = "3.1"}
 
-# TODO: Maybe upstream my changes?
-parity-wasm = { git = "https://github.com/lwagner94/parity-wasm", branch="instruction-offsets-rework", features=["std", "offsets"] }
+wasmut-wasm = { version = "0.46", features=["std", "offsets"] }
 
 anyhow = "1.0"
 regex = "1.7"

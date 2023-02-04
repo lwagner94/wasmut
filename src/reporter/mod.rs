@@ -243,7 +243,7 @@ impl<'a> SyntectFileContext<'a> {
 
 #[cfg(test)]
 mod tests {
-    use parity_wasm::elements::Instruction;
+    use wasmut_wasm::elements::Instruction;
 
     use crate::operator::ops::BinaryOperatorAddToSub;
 

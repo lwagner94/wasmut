@@ -132,7 +132,7 @@ mod tests {
 
     use super::*;
     use anyhow::Result;
-    use parity_wasm::elements::Instruction;
+    use wasmut_wasm::elements::Instruction;
 
     #[test]
     fn test_count_mutants() {

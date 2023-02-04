@@ -1194,11 +1194,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "parity-wasm"
-version = "0.45.0"
-source = "git+https://github.com/lwagner94/parity-wasm?branch=instruction-offsets-rework#0075fa84892b2f421f43fbdbc655c9f7554972af"
-
-[[package]]
 name = "pest"
 version = "2.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2523,7 +2518,6 @@ dependencies = [
  "md5",
  "num_cpus",
  "object",
- "parity-wasm",
  "pretty_assertions",
  "quickcheck",
  "rand",
@@ -2538,7 +2532,14 @@ dependencies = [
  "wasmer-compiler-singlepass",
  "wasmer-middlewares",
  "wasmer-wasi",
+ "wasmut-wasm",
 ]
+
+[[package]]
+name = "wasmut-wasm"
+version = "0.46.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a65a02bb41adfb0c5ae02d7e5d5e9aaf3fb47765c3ae845bdb97f020e172617b"
 
 [[package]]
 name = "wast"
