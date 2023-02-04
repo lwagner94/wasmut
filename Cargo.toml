@@ -32,7 +32,7 @@ parity-wasm = { git = "https://github.com/lwagner94/parity-wasm", branch="instru
 
 anyhow = "1.0"
 regex = "1.7"
-clap = {version = "3.0", features=["cargo", "derive"]} # TODO
+clap = {version = "4.1", features=["cargo", "derive"]} # TODO
 object = { version = "0.30", features = ["read", "wasm"]}
 addr2line = "0.19"
 gimli = "0.27"

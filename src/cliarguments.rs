@@ -1,6 +1,6 @@
 use std::ffi::OsString;
 
-use clap::{ArgEnum, Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -63,7 +63,7 @@ pub enum CLICommand {
         threads: Option<usize>,
 
         /// Report output format
-        #[clap(short, long, arg_enum, default_value_t=Output::Console)]
+        #[clap(short, long, value_enum, default_value_t=Output::Console)]
         report: Output,
 
         /// Output directory for reports
@@ -117,7 +117,7 @@ pub enum CLICommand {
     },
 }
 
-#[derive(ArgEnum, Clone, Debug)]
+#[derive(ValueEnum, Clone, Debug)]
 pub enum Output {
     Console,
     Html,
@@ -136,5 +136,16 @@ impl CLIArguments {
         T: Into<OsString> + Clone,
     {
         Self::parse_from(itr)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::cliarguments::CLIArguments;
+
+    #[test]
+    fn test_cli() {
+        use clap::CommandFactory;
+        CLIArguments::command().debug_assert()
     }
 }
