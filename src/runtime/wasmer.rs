@@ -145,7 +145,7 @@ impl WasmerRuntime {
             .exports
             .get_function("_start")
             .context("Failed to resolve _start function")?
-            .typed::<(), ()>(&mut self.store)
+            .typed::<(), ()>(&self.store)
             .context("Failed to get native _start function")?;
 
         let result = func.call(&mut self.store).map(|_| 0);
@@ -258,8 +258,8 @@ fn create_store(compiler: Compiler) -> Store {
     let metering = Arc::new(Metering::new(u64::MAX, cost_function));
 
     let mut compiler_config: Box<dyn CompilerConfig> = match compiler {
-        Compiler::Singlepass => Box::new(Singlepass::default()),
-        Compiler::Cranelift => Box::new(Cranelift::default()),
+        Compiler::Singlepass => Box::<Singlepass>::default(),
+        Compiler::Cranelift => Box::<Cranelift>::default(),
     };
 
     compiler_config.push_middleware(metering);
@@ -270,7 +270,7 @@ fn create_store(compiler: Compiler) -> Store {
 
 fn create_module(module: &WasmModule, store: &Store) -> Result<Module> {
     let bytecode: Vec<u8> = module.to_bytes()?;
-    let module = Module::new(store, &bytecode).context("Failed to create wasmer module")?;
+    let module = Module::new(store, bytecode).context("Failed to create wasmer module")?;
 
     Ok(module)
 }

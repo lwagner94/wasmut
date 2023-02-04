@@ -207,7 +207,7 @@ fn init_rayon(threads: Option<usize>) {
     // build_global only seems to return an error
     // if called twice, so this should be fine.
     let _ = rayon::ThreadPoolBuilder::new()
-        .num_threads(threads as usize)
+        .num_threads(threads)
         .build_global();
 }
 

@@ -191,7 +191,7 @@ impl<'a> HTMLReporter<'a> {
 
     /// Create the output directory
     fn create_output_directory(&self) -> Result<()> {
-        std::fs::create_dir_all(&self.output_directory)?;
+        std::fs::create_dir_all(self.output_directory)?;
         Ok(())
     }
 
@@ -254,8 +254,8 @@ impl<'a> HTMLReporter<'a> {
         let data = BTreeMap::from([
             ("source_files", handlebars::to_json(source_files)),
             ("file", handlebars::to_json::<Option<String>>(None)),
-            ("report_info", handlebars::to_json(&report_info)),
-            ("stats", handlebars::to_json(&stats)),
+            ("report_info", handlebars::to_json(report_info)),
+            ("stats", handlebars::to_json(stats)),
         ]);
         let writer = BufWriter::new(File::create(self.output_directory.join("index.html"))?);
         template_engine

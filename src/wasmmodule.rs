@@ -72,7 +72,7 @@ impl<'a> WasmModule<'a> {
             .code_section()
             .context("Module has no code section")?;
 
-        let bytes = std::fs::read(&self.path.as_ref())
+        let bytes = std::fs::read(self.path.as_ref())
             .with_context(|| format!("Could not read bytecode from {}", self.path))?;
 
         Ok(code_section
