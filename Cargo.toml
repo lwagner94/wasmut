@@ -22,10 +22,8 @@ maintenance = { status = "actively-developed" }
 [dependencies]
 rayon = "1.6.1"
 
-# TODO
 wasmer = { version = "3.1"}
 wasmer-compiler-singlepass = {version = "3.1"}
-# wasmer-engine-universal = {version = "3.1"}
 wasmer-wasi = {version = "3.1"}
 wasmer-middlewares = {version = "3.1"}
 
@@ -47,7 +45,7 @@ env_logger = "0.10"
 num_cpus = "1.15"
 indicatif = {version = "0.17", features = ["rayon"]}
 rand = "0.8"
-syntect = "4.6.0" # TODO
+syntect = "5.0"
 handlebars = "4.3"
 md5 = "0.7"
 concat-idents = "1.1"

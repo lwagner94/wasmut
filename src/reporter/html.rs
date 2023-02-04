@@ -164,7 +164,7 @@ impl<'a> HTMLReporter<'a> {
                 &line,
                 mutants_in_given_line,
                 html_generator,
-            ))
+            )?)
         }
 
         Ok(source_lines)
@@ -174,7 +174,7 @@ impl<'a> HTMLReporter<'a> {
     fn create_static_files(&self) -> Result<()> {
         let ts = syntect::highlighting::ThemeSet::load_defaults();
         let theme = ts.themes["InspiredGitHub"].clone();
-        let css = syntect::html::css_for_theme_with_class_style(&theme, ClassStyle::Spaced);
+        let css = syntect::html::css_for_theme_with_class_style(&theme, ClassStyle::Spaced)?;
         std::fs::write(self.output_directory.join("syntax.css"), css)?;
         std::fs::write(self.output_directory.join("style.css"), templates::CSS)?;
         std::fs::write(
@@ -325,10 +325,10 @@ impl SourceLine {
         line_content: &str,
         mutants: &[&ReportableMutant],
         mut html_generator: ClassedHTMLGenerator,
-    ) -> Self {
+    ) -> Result<Self> {
         // Generate HTML code for a line of source code
         let line_including_newline = format!("{line_content}\n");
-        html_generator.parse_html_for_line_which_includes_newline(&line_including_newline);
+        html_generator.parse_html_for_line_which_includes_newline(&line_including_newline)?;
         let html = html_generator.finalize();
 
         // Accumulate mutants for the given line
@@ -343,13 +343,13 @@ impl SourceLine {
             })
             .collect();
 
-        SourceLine {
+        Ok(SourceLine {
             line_number: line_nr,
             code: html,
             mutants: inline_mutants,
             mutant_tag_class: BulmaClass::from(accumulated_outcomes.clone()).into(),
             accumulated_outcomes,
-        }
+        })
     }
 }
 

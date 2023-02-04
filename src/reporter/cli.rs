@@ -101,7 +101,7 @@ impl CLIReporter {
                 match Self::get_line_from_file(file, line_nr) {
                     Ok(line) => {
                         line_in_file = if self.should_colorize {
-                            highlighter.terminal_string(&line)
+                            highlighter.terminal_string(&line).unwrap_or(line)
                         } else {
                             line
                         };
