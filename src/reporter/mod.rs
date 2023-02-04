@@ -234,7 +234,10 @@ impl<'a> SyntectFileContext<'a> {
     fn terminal_string(&self, line: &str) -> Result<String> {
         let mut highlight = HighlightLines::new(self.syntax, &self.context.theme);
         let regions = highlight.highlight_line(line, &self.context.syntax_set)?;
-        Ok(syntect::util::as_24_bit_terminal_escaped(&regions[..], false))
+        Ok(syntect::util::as_24_bit_terminal_escaped(
+            &regions[..],
+            false,
+        ))
     }
 }
 
